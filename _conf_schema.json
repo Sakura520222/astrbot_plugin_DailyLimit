@@ -1,0 +1,82 @@
+{
+    "redis": {
+        "description": "Redis配置",
+        "type": "object",
+        "items": {
+            "host": {
+                "description": "主机地址",
+                "type": "string",
+                "default": "localhost"
+            },
+            "port": {
+                "description": "端口",
+                "type": "int",
+                "default": 6379
+            },
+            "db": {
+                "description": "数据库",
+                "type": "int",
+                "default": 0
+            },
+            "password": {
+                "description": "密码",
+                "type": "string",
+                "default": ""
+            }
+        }
+    },
+    "limits": {
+        "description": "限制配置",
+        "type": "object",
+        "items": {
+            "default_daily_limit": {
+                "description": "默认每日限制次数",
+                "type": "int",
+                "default": 20
+            },
+            "exempt_users": {
+                "description": "豁免用户ID列表",
+                "type": "list",
+                "default": []
+            },
+            "group_limits": {
+                "description": "特定群组限制",
+                "type": "list",
+                "default": [],
+                "hint": "格式为：{\"group_id\": 群组ID, \"limit\": 每日限制次数}(使用指令/sid查看ID)",
+                "items": {
+                    "type": "object",
+                    "items": {
+                        "group_id": {
+                            "description": "群组ID",
+                            "type": "string"
+                        },
+                        "limit": {
+                            "description": "每日限制次数",
+                            "type": "int"
+                        }
+                    }
+                }
+            },
+            "user_limits": {
+                "description": "特定用户限制",
+                "type": "list",
+                "default": [],
+                "hint": "格式为：{\"user_id\": 用户ID, \"limit\": 每日限制次数}",
+                "items": {
+                    "type": "object",
+                    "items": {
+                        "user_id": {
+                            "description": "用户ID",
+                            "type": "string"
+                        },
+                        "limit": {
+                            "description": "每日限制次数",
+                            "type": "int"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
