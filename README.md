@@ -29,10 +29,10 @@
 
 ```json
 "redis": {
-    "host": "localhost",  // Redis服务器地址
-    "port": 6379,         // Redis服务器端口
-    "db": 0,              // Redis数据库编号
-    "password": ""        // Redis密码（如果有）
+    "host": "localhost",
+    "port": 6379,
+    "db": 0,
+    "password": ""
 }
 ```
 
@@ -40,10 +40,10 @@
 
 ```json
 "limits": {
-    "default_daily_limit": 20,  // 默认每日限制次数
-    "exempt_users": [],         // 豁免用户ID列表
-    "group_limits": [],         // 特定群组限制
-    "user_limits": []           // 特定用户限制
+    "default_daily_limit": 20,
+    "exempt_users": [],
+    "group_limits": [],
+    "user_limits": []
 }
 ```
 
@@ -52,7 +52,7 @@
 ```json
 {
     "group_id": "群组ID",
-    "limit": "每日限制次数"
+    "limit": 15
 }
 ```
 
@@ -61,7 +61,7 @@
 ```json
 {
     "user_id": "用户ID",
-    "limit": "每日限制次数"
+    "limit": 10
 }
 ```
 
