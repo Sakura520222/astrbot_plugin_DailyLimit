@@ -83,8 +83,8 @@
 
 ### 使用演示
 
-<img src="./images/微信图片_20250402090340.jpg" alt="使用界面" title="使用界面">
-<img src="./images/微信图片_20250402090425.jpg" alt="使用界面" title="使用界面">
+<img src="./images/微信图片_20250402090425.jpg" alt="使用界面" title="使用界面" width="400">
+<img src="./images/微信图片_20250402090340.jpg" alt="使用界面" title="使用界面" width="400">
 
 ## 版本信息
 

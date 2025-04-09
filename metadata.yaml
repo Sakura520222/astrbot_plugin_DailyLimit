@@ -1,5 +1,5 @@
 name: daily_limit
-desc: 限制人员每日调用大模型的次数
+desc: 限制用户每日调用大模型的次数
 help: 使用 /limit help 查看使用说明
 version: v1.0.1
 author: left666

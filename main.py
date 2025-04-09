@@ -15,7 +15,7 @@ from astrbot.api import logger
 
 @star.register(
     name="daily_limit",
-    desc="限制人员每日调用大模型的次数",
+    desc="限制用户每日调用大模型的次数",
     author="left666",
     version="v1.0.1",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
@@ -193,12 +193,12 @@ class DailyLimitPlugin(star.Star):
             if group_id is not None:
                 user_name = event.get_sender_name()
                 await event.send(
-                    MessageChain().at(user_name, user_id).message(f"您今日的AI访问次数已达上限({limit}次)，"
+                    MessageChain().at(user_name, user_id).message(f"您今日的AI访问次数已达上限，"
                                                                   f"请明天再试或联系管理员提升限额。")
                 )
             else:
                 await event.send(
-                    MessageChain().message(f"您今日的AI访问次数已达上限({limit}次)，"
+                    MessageChain().message(f"您今日的AI访问次数已达上限，"
                                            f"请明天再试或联系管理员提升限额。")
                 )
             event.stop_event()  # 终止事件传播
@@ -226,6 +226,31 @@ class DailyLimitPlugin(star.Star):
             status_msg = f"您今日已使用 {usage}/{limit} 次AI"
 
         event.set_result(MessageEventResult().message(status_msg))
+
+    @filter.command("限制帮助")
+    async def limit_help_all(self, event: AstrMessageEvent):
+        """显示本插件所有指令及其帮助信息"""
+        help_msg = (
+            "📋 日调用限制插件 - 指令帮助\n\n"
+            "👤 用户指令：\n"
+            "• /limit_status - 查看当前使用状态\n"
+            "• /限制帮助 - 显示本帮助信息\n\n"
+            "👨‍💼 管理员指令：\n"
+            "• /limit help - 显示详细帮助信息\n"
+            "• /limit set <用户ID> <次数> - 设置特定用户的限制\n"
+            "• /limit setgroup <次数> - 设置当前群组的限制\n"
+            "• /limit exempt <用户ID> - 将用户添加到豁免列表\n"
+            "• /limit unexempt <用户ID> - 将用户从豁免列表移除\n"
+            "• /limit list_user - 列出所有用户特定限制\n"
+            "• /limit list_group - 列出所有群组特定限制\n\n"
+            "💡 说明：\n"
+            "- 默认限制：所有用户每日调用次数\n"
+            "- 群组限制：可针对特定群组设置不同限制\n"
+            "- 用户限制：可针对特定用户设置不同限制\n"
+            "- 豁免用户：不受限制的用户列表"
+        )
+
+        event.set_result(MessageEventResult().message(help_msg))
 
     @filter.command_group("limit")
     def limit_command_group(self):
