@@ -86,11 +86,6 @@
 }
 ```
 
-### 🎛️ 配置界面
-
-<div align="center">
-<img src="./images/配置.png" alt="配置界面" width="600">
-</div>
 
 ### 📝 配置说明
 
