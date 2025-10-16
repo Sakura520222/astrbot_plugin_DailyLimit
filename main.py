@@ -242,7 +242,8 @@ class DailyLimitPlugin(star.Star):
             "• /limit exempt <用户ID> - 将用户添加到豁免列表\n"
             "• /limit unexempt <用户ID> - 将用户从豁免列表移除\n"
             "• /limit list_user - 列出所有用户特定限制\n"
-            "• /limit list_group - 列出所有群组特定限制\n\n"
+            "• /limit list_group - 列出所有群组特定限制\n"
+            "• /limit stats - 查看插件使用统计信息\n\n"
             "💡 说明：\n"
             "- 默认限制：所有用户每日调用次数\n"
             "- 群组限制：可针对特定群组设置不同限制\n"
@@ -386,6 +387,43 @@ class DailyLimitPlugin(star.Star):
             group_limits_str += f"- 群组 {group_id}: {limit} 次/天\n"
 
         event.set_result(MessageEventResult().message(group_limits_str))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("stats")
+    async def limit_stats(self, event: AstrMessageEvent):
+        """显示插件使用统计信息（仅管理员）"""
+        if not self.redis:
+            event.set_result(MessageEventResult().message("Redis未连接，无法获取统计信息"))
+            return
+
+        try:
+            # 获取今日所有用户的调用统计
+            today_key = self._get_today_key()
+            pattern = f"{today_key}:*"
+            keys = self.redis.keys(pattern)
+            
+            total_calls = 0
+            active_users = 0
+            
+            for key in keys:
+                usage = self.redis.get(key)
+                if usage:
+                    total_calls += int(usage)
+                    active_users += 1
+            
+            stats_msg = (
+                f"📊 今日统计信息：\n"
+                f"• 活跃用户数: {active_users}\n"
+                f"• 总调用次数: {total_calls}\n"
+                f"• 用户特定限制数: {len(self.user_limits)}\n"
+                f"• 群组特定限制数: {len(self.group_limits)}\n"
+                f"• 豁免用户数: {len(self.config['limits']['exempt_users'])}"
+            )
+            
+            event.set_result(MessageEventResult().message(stats_msg))
+        except Exception as e:
+            logger.error(f"获取统计信息失败: {str(e)}")
+            event.set_result(MessageEventResult().message("获取统计信息失败"))
 
     async def terminate(self):
         """插件终止时的清理工作"""
