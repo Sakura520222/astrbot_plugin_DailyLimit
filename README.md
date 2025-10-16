@@ -175,7 +175,7 @@
 
 ### 🐛 问题反馈
 如遇到任何问题，请通过以下方式联系：
-- 📧 邮箱: [你的邮箱]
+- 📧 Telegram: [@TamakiSakura520](https://t.me/TamakiSakura520)
 - 💬 Issues: [GitHub Issues](https://github.com/Sakura520222/astrbot_plugin_daily_limit/issues)
 
 ### 🤝 贡献指南
