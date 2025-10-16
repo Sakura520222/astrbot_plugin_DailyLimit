@@ -1,3 +1,4 @@
+import json
 import redis
 import datetime
 import astrbot.api.star as star
@@ -29,6 +30,7 @@ class DailyLimitPlugin(star.Star):
         self.config = config
         self.group_limits = {}  # 群组特定限制 {"group_id": limit_count}
         self.user_limits = {}  # 用户特定限制 {"user_id": limit_count}
+        self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
 
         # 加载群组和用户特定限制
         self._load_limits_from_config()
@@ -122,6 +124,23 @@ class DailyLimitPlugin(star.Star):
         """获取群组共享的Redis键"""
         return f"{self._get_today_key()}:group:{group_id}"
 
+    def _get_usage_record_key(self, user_id, group_id=None, date_str=None):
+        """获取使用记录Redis键"""
+        if date_str is None:
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        if group_id is None:
+            group_id = "private_chat"
+        
+        return f"astrbot:usage_record:{date_str}:{group_id}:{user_id}"
+
+    def _get_usage_stats_key(self, date_str=None):
+        """获取使用统计Redis键"""
+        if date_str is None:
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        return f"astrbot:usage_stats:{date_str}"
+
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
         # 检查用户是否豁免
@@ -195,6 +214,74 @@ class DailyLimitPlugin(star.Star):
         pipe.execute()
         return True
 
+    def _record_usage(self, user_id, group_id=None, usage_type="llm_request"):
+        """记录使用记录"""
+        if not self.redis:
+            return False
+            
+        timestamp = datetime.datetime.now().isoformat()
+        record_key = self._get_usage_record_key(user_id, group_id)
+        
+        # 记录详细使用信息
+        record_data = {
+            "timestamp": timestamp,
+            "user_id": user_id,
+            "group_id": group_id,
+            "usage_type": usage_type,
+            "date": datetime.datetime.now().strftime("%Y-%m-%d")
+        }
+        
+        # 使用Redis列表存储使用记录
+        self.redis.rpush(record_key, json.dumps(record_data))
+        
+        # 设置过期时间到明天凌晨
+        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        self.redis.expire(record_key, seconds_until_tomorrow)
+        
+        # 更新统计信息
+        self._update_usage_stats(user_id, group_id)
+        
+        return True
+
+    def _update_usage_stats(self, user_id, group_id=None):
+        """更新使用统计信息"""
+        if not self.redis:
+            return False
+            
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        stats_key = self._get_usage_stats_key(date_str)
+        
+        # 更新用户统计
+        user_stats_key = f"{stats_key}:user:{user_id}"
+        self.redis.hincrby(user_stats_key, "total_usage", 1)
+        
+        # 更新群组统计（如果有群组）
+        if group_id:
+            group_stats_key = f"{stats_key}:group:{group_id}"
+            self.redis.hincrby(group_stats_key, "total_usage", 1)
+            
+            # 更新群组用户统计
+            group_user_stats_key = f"{stats_key}:group:{group_id}:user:{user_id}"
+            self.redis.hincrby(group_user_stats_key, "usage_count", 1)
+        
+        # 更新全局统计
+        global_stats_key = f"{stats_key}:global"
+        self.redis.hincrby(global_stats_key, "total_requests", 1)
+        
+        # 设置过期时间到明天凌晨
+        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        
+        # 为所有统计键设置过期时间
+        for key in [user_stats_key, group_stats_key, group_user_stats_key, global_stats_key]:
+            if self.redis.exists(key):
+                self.redis.expire(key, seconds_until_tomorrow)
+        
+        return True
+
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
         """处理LLM请求事件"""
@@ -263,6 +350,9 @@ class DailyLimitPlugin(star.Star):
         else:
             self._increment_user_usage(user_id, group_id)
         
+        # 记录使用记录
+        self._record_usage(user_id, group_id, "llm_request")
+        
         return True  # 允许继续处理
 
     @filter.command("limit_status")
@@ -279,11 +369,19 @@ class DailyLimitPlugin(star.Star):
         # 如果是群组消息，显示群组共享状态；否则显示个人状态
         if group_id is not None:
             usage = self._get_group_usage(group_id)
+            # 首先检查是否被豁免（无限制）
             if limit == float('inf'):
+                # 群组被豁免（无限制）
                 status_msg = "本群组没有调用次数限制"
-            else:
+            # 然后检查群组是否设置了特定限制
+            elif str(group_id) in self.group_limits:
+                # 群组有特定限制
                 remaining = limit - usage
                 status_msg = f"本群组今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
+            else:
+                # 群组使用默认限制
+                remaining = limit - usage
+                status_msg = f"本群组今日已使用 {usage}/{limit} 次（默认限制），剩余 {remaining} 次"
         else:
             usage = self._get_user_usage(user_id, group_id)
             if limit == float('inf'):
@@ -311,6 +409,8 @@ class DailyLimitPlugin(star.Star):
             "• /limit list_user - 列出所有用户特定限制\n"
             "• /limit list_group - 列出所有群组特定限制\n"
             "• /limit stats - 查看插件使用统计信息\n"
+            "• /limit history [用户ID] [天数] - 查询使用历史记录\n"
+            "• /limit analytics [日期] - 多维度统计分析\n"
             "• /limit top [数量] - 查看使用次数排行榜\n"
             "• /limit status - 检查插件状态和健康状态\n"
             "• /limit reset <用户ID|all> - 重置用户使用次数\n\n"
@@ -319,7 +419,9 @@ class DailyLimitPlugin(star.Star):
             "- 群组限制：可针对特定群组设置不同限制\n"
             "- 用户限制：可针对特定用户设置不同限制\n"
             "- 豁免用户：不受限制的用户列表\n"
-            "- 剩余次数提醒：当剩余1、3、5次时会自动提醒"
+            "- 剩余次数提醒：当剩余1、3、5次时会自动提醒\n"
+            "- 使用记录：自动记录每次调用，支持历史查询\n"
+            "- 统计分析：提供多维度使用数据分析"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -344,6 +446,12 @@ class DailyLimitPlugin(star.Star):
             "- /limit unexempt <用户ID>：将用户从豁免列表移除\n"
             "- /limit list_user：列出所有用户特定限制\n"
             "- /limit list_group：列出所有群组特定限制\n"
+            "- /limit stats：查看插件使用统计信息\n"
+            "- /limit history [用户ID] [天数]：查询使用历史记录\n"
+            "- /limit analytics [日期]：多维度统计分析\n"
+            "- /limit top [数量]：查看使用次数排行榜\n"
+            "- /limit status：检查插件状态和健康状态\n"
+            "- /limit reset <用户ID|all>：重置使用次数\n"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -495,6 +603,174 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             logger.error(f"获取统计信息失败: {str(e)}")
             event.set_result(MessageEventResult().message("获取统计信息失败"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("history")
+    async def limit_history(self, event: AstrMessageEvent, user_id: str = None, days: int = 7):
+        """查询使用历史记录（仅管理员）"""
+        if not self.redis:
+            event.set_result(MessageEventResult().message("Redis未连接，无法获取历史记录"))
+            return
+
+        try:
+            if days < 1 or days > 30:
+                event.set_result(MessageEventResult().message("查询天数应在1-30之间"))
+                return
+
+            # 获取最近days天的使用记录
+            date_list = []
+            for i in range(days):
+                date = datetime.datetime.now() - datetime.timedelta(days=i)
+                date_list.append(date.strftime("%Y-%m-%d"))
+
+            if user_id:
+                # 查询特定用户的历史记录
+                user_records = {}
+                for date_str in date_list:
+                    # 查询个人聊天记录
+                    private_key = self._get_usage_record_key(user_id, None, date_str)
+                    private_records = self.redis.lrange(private_key, 0, -1)
+                    
+                    # 查询群组记录
+                    group_pattern = f"astrbot:usage_record:{date_str}:*:{user_id}"
+                    group_keys = self.redis.keys(group_pattern)
+                    
+                    daily_total = len(private_records)
+                    
+                    for key in group_keys:
+                        group_records = self.redis.lrange(key, 0, -1)
+                        daily_total += len(group_records)
+                    
+                    if daily_total > 0:
+                        user_records[date_str] = daily_total
+                
+                if not user_records:
+                    event.set_result(MessageEventResult().message(f"用户 {user_id} 在最近{days}天内没有使用记录"))
+                    return
+                
+                history_msg = f"📊 用户 {user_id} 最近{days}天使用历史：\n"
+                for date_str, count in sorted(user_records.items(), reverse=True):
+                    history_msg += f"• {date_str}: {count}次\n"
+                
+                event.set_result(MessageEventResult().message(history_msg))
+            else:
+                # 查询全局历史记录
+                global_stats = {}
+                for date_str in date_list:
+                    stats_key = self._get_usage_stats_key(date_str)
+                    global_key = f"{stats_key}:global"
+                    
+                    total_requests = self.redis.hget(global_key, "total_requests")
+                    if total_requests:
+                        global_stats[date_str] = int(total_requests)
+                
+                if not global_stats:
+                    event.set_result(MessageEventResult().message(f"最近{days}天内没有使用记录"))
+                    return
+                
+                history_msg = f"📊 最近{days}天全局使用统计：\n"
+                for date_str, count in sorted(global_stats.items(), reverse=True):
+                    history_msg += f"• {date_str}: {count}次\n"
+                
+                event.set_result(MessageEventResult().message(history_msg))
+                
+        except Exception as e:
+            logger.error(f"查询历史记录失败: {str(e)}")
+            event.set_result(MessageEventResult().message("查询历史记录失败"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("analytics")
+    async def limit_analytics(self, event: AstrMessageEvent, date_str: str = None):
+        """多维度统计分析（仅管理员）"""
+        if not self.redis:
+            event.set_result(MessageEventResult().message("Redis未连接，无法获取分析数据"))
+            return
+
+        try:
+            if date_str is None:
+                date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            
+            stats_key = self._get_usage_stats_key(date_str)
+            
+            # 获取全局统计
+            global_key = f"{stats_key}:global"
+            total_requests = self.redis.hget(global_key, "total_requests")
+            
+            # 获取用户统计
+            user_pattern = f"{stats_key}:user:*"
+            user_keys = self.redis.keys(user_pattern)
+            
+            # 获取群组统计
+            group_pattern = f"{stats_key}:group:*"
+            group_keys = self.redis.keys(group_pattern)
+            
+            analytics_msg = f"📈 {date_str} 多维度统计分析：\n\n"
+            
+            # 全局统计
+            if total_requests:
+                analytics_msg += f"🌍 全局统计：\n"
+                analytics_msg += f"• 总调用次数: {int(total_requests)}次\n"
+            
+            # 用户统计
+            if user_keys:
+                analytics_msg += f"\n👤 用户统计：\n"
+                analytics_msg += f"• 活跃用户数: {len(user_keys)}人\n"
+                
+                # 计算用户平均使用次数
+                user_total = 0
+                for key in user_keys:
+                    usage = self.redis.hget(key, "total_usage")
+                    if usage:
+                        user_total += int(usage)
+                
+                if len(user_keys) > 0:
+                    avg_usage = user_total / len(user_keys)
+                    analytics_msg += f"• 用户平均使用次数: {avg_usage:.1f}次\n"
+            
+            # 群组统计
+            if group_keys:
+                analytics_msg += f"\n👥 群组统计：\n"
+                analytics_msg += f"• 活跃群组数: {len(group_keys)}个\n"
+                
+                # 计算群组平均使用次数
+                group_total = 0
+                for key in group_keys:
+                    usage = self.redis.hget(key, "total_usage")
+                    if usage:
+                        group_total += int(usage)
+                
+                if len(group_keys) > 0:
+                    avg_group_usage = group_total / len(group_keys)
+                    analytics_msg += f"• 群组平均使用次数: {avg_group_usage:.1f}次\n"
+            
+            # 使用分布分析
+            if user_keys:
+                analytics_msg += f"\n📊 使用分布：\n"
+                
+                # 统计不同使用频次的用户数量
+                usage_levels = {"低(1-5次)": 0, "中(6-20次)": 0, "高(21+次)": 0}
+                
+                for key in user_keys:
+                    usage = self.redis.hget(key, "total_usage")
+                    if usage:
+                        usage_count = int(usage)
+                        if usage_count <= 5:
+                            usage_levels["低(1-5次)"] += 1
+                        elif usage_count <= 20:
+                            usage_levels["中(6-20次)"] += 1
+                        else:
+                            usage_levels["高(21+次)"] += 1
+                
+                for level, count in usage_levels.items():
+                    if count > 0:
+                        percentage = (count / len(user_keys)) * 100
+                        analytics_msg += f"• {level}: {count}人 ({percentage:.1f}%)\n"
+            
+            event.set_result(MessageEventResult().message(analytics_msg))
+            
+        except Exception as e:
+            logger.error(f"获取分析数据失败: {str(e)}")
+            event.set_result(MessageEventResult().message("获取分析数据失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("status")
