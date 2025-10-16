@@ -118,6 +118,10 @@ class DailyLimitPlugin(star.Star):
         
         return f"{self._get_today_key()}:{group_id}:{user_id}"
 
+    def _get_group_key(self, group_id):
+        """获取群组共享的Redis键"""
+        return f"{self._get_today_key()}:group:{group_id}"
+
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
         # 检查用户是否豁免
@@ -136,7 +140,7 @@ class DailyLimitPlugin(star.Star):
         return self.config["limits"]["default_daily_limit"]
 
     def _get_user_usage(self, user_id, group_id=None):
-        """获取用户已使用次数"""
+        """获取用户已使用次数（兼容旧版本）"""
         if not self.redis:
             return 0
 
@@ -144,12 +148,40 @@ class DailyLimitPlugin(star.Star):
         usage = self.redis.get(key)
         return int(usage) if usage else 0
 
+    def _get_group_usage(self, group_id):
+        """获取群组共享使用次数"""
+        if not self.redis:
+            return 0
+
+        key = self._get_group_key(group_id)
+        usage = self.redis.get(key)
+        return int(usage) if usage else 0
+
     def _increment_user_usage(self, user_id, group_id=None):
-        """增加用户使用次数"""
+        """增加用户使用次数（兼容旧版本）"""
         if not self.redis:
             return False
 
         key = self._get_user_key(user_id, group_id)
+        # 增加计数并设置过期时间
+        pipe = self.redis.pipeline()
+        pipe.incr(key)
+
+        # 设置过期时间到明天凌晨
+        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        pipe.expire(key, seconds_until_tomorrow)
+
+        pipe.execute()
+        return True
+
+    def _increment_group_usage(self, group_id):
+        """增加群组共享使用次数"""
+        if not self.redis:
+            return False
+
+        key = self._get_group_key(group_id)
         # 增加计数并设置过期时间
         pipe = self.redis.pipeline()
         pipe.incr(key)
@@ -186,7 +218,12 @@ class DailyLimitPlugin(star.Star):
 
         # 检查限制
         limit = self._get_user_limit(user_id, group_id)
-        usage = self._get_user_usage(user_id, group_id)
+        
+        # 如果是群组消息，使用群组共享使用次数；否则使用个人使用次数
+        if group_id is not None:
+            usage = self._get_group_usage(group_id)
+        else:
+            usage = self._get_user_usage(user_id, group_id)
 
         # 检查是否超过限制
         if usage >= limit:
@@ -194,12 +231,12 @@ class DailyLimitPlugin(star.Star):
             if group_id is not None:
                 user_name = event.get_sender_name()
                 await event.send(
-                    MessageChain().at(user_name, user_id).message(f"您的AI访问次数已达上限，"
+                    MessageChain().at(user_name, user_id).message(f"本群组AI访问次数已达上限（{usage}/{limit}），"
                                                                   f"请稍后再试或联系管理员提升限额。")
                 )
             else:
                 await event.send(
-                    MessageChain().message(f"您的AI访问次数已达上限，"
+                    MessageChain().message(f"您的AI访问次数已达上限（{usage}/{limit}），"
                                            f"请稍后再试或联系管理员提升限额。")
                 )
             event.stop_event()  # 终止事件传播
@@ -208,19 +245,23 @@ class DailyLimitPlugin(star.Star):
         # 检查是否需要提醒剩余次数（当剩余次数为1、3、5时提醒）
         remaining = limit - usage
         if remaining in [1, 3, 5]:
-            reminder_msg = f"💡 提醒：您剩余AI调用次数为 {remaining} 次"
             if group_id is not None:
+                reminder_msg = f"💡 提醒：本群组剩余AI调用次数为 {remaining} 次"
                 user_name = event.get_sender_name()
                 await event.send(
                     MessageChain().at(user_name, user_id).message(reminder_msg)
                 )
             else:
+                reminder_msg = f"💡 提醒：您剩余AI调用次数为 {remaining} 次"
                 await event.send(
                     MessageChain().message(reminder_msg)
                 )
 
-        # 增加用户使用次数
-        self._increment_user_usage(user_id, group_id)
+        # 增加使用次数
+        if group_id is not None:
+            self._increment_group_usage(group_id)
+        else:
+            self._increment_user_usage(user_id, group_id)
         
         return True  # 允许继续处理
 
@@ -234,13 +275,22 @@ class DailyLimitPlugin(star.Star):
 
         # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
-        usage = self._get_user_usage(user_id, group_id)
         
-        if limit == float('inf'):
-            status_msg = "您没有调用次数限制"
+        # 如果是群组消息，显示群组共享状态；否则显示个人状态
+        if group_id is not None:
+            usage = self._get_group_usage(group_id)
+            if limit == float('inf'):
+                status_msg = "本群组没有调用次数限制"
+            else:
+                remaining = limit - usage
+                status_msg = f"本群组今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
         else:
-            remaining = limit - usage
-            status_msg = f"您今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
+            usage = self._get_user_usage(user_id, group_id)
+            if limit == float('inf'):
+                status_msg = "您没有调用次数限制"
+            else:
+                remaining = limit - usage
+                status_msg = f"您今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
 
         event.set_result(MessageEventResult().message(status_msg))
 
@@ -526,58 +576,89 @@ class DailyLimitPlugin(star.Star):
             return
 
         try:
-            # 获取今日的键模式
+            # 获取今日的键模式 - 同时获取个人和群组键
             pattern = f"{self._get_today_key()}:*"
 
             keys = self.redis.keys(pattern)
             
             if not keys:
-                await event.send(MessageChain().message("📊 今日暂无用户使用记录"))
+                await event.send(MessageChain().message("📊 今日暂无使用记录"))
                 return
 
-            # 获取所有键对应的使用次数
-            usage_data = []
+            # 获取所有键对应的使用次数，区分个人和群组
+            user_usage_data = []
+            group_usage_data = []
+            
             for key in keys:
                 usage = self.redis.get(key)
                 if usage:
-                    # 从键名中提取用户ID和群组ID
+                    # 从键名中提取信息
                     parts = key.split(":")
                     if len(parts) >= 5:
-                        group_id = parts[-2]
-                        user_id = parts[-1]
-                        usage_data.append({
-                            "user_id": user_id,
-                            "group_id": group_id,
-                            "usage": int(usage)
-                        })
+                        # 判断是个人键还是群组键
+                        if parts[-2] == "group":
+                            # 群组键格式: astrbot:daily_limit:2025-01-23:group:群组ID
+                            group_id = parts[-1]
+                            group_usage_data.append({
+                                "group_id": group_id,
+                                "usage": int(usage),
+                                "type": "group"
+                            })
+                        else:
+                            # 个人键格式: astrbot:daily_limit:2025-01-23:群组ID:用户ID
+                            group_id = parts[-2]
+                            user_id = parts[-1]
+                            user_usage_data.append({
+                                "user_id": user_id,
+                                "group_id": group_id,
+                                "usage": int(usage),
+                                "type": "user"
+                            })
 
-            # 按使用次数排序
-            usage_data.sort(key=lambda x: x["usage"], reverse=True)
+            # 合并数据并按使用次数排序
+            all_usage_data = user_usage_data + group_usage_data
+            all_usage_data.sort(key=lambda x: x["usage"], reverse=True)
             
             # 取前count名
-            top_users = usage_data[:count]
+            top_entries = all_usage_data[:count]
             
-            if not top_users:
-                await event.send(MessageChain().message("📊 今日暂无用户使用记录"))
+            if not top_entries:
+                await event.send(MessageChain().message("📊 今日暂无使用记录"))
                 return
 
             # 构建排行榜消息
-            leaderboard_msg = f"🏆 今日使用次数排行榜（前{len(top_users)}名）\n\n"
+            leaderboard_msg = f"🏆 今日使用次数排行榜（前{len(top_entries)}名）\n\n"
             
-            for i, user_data in enumerate(top_users, 1):
-                user_id = user_data["user_id"]
-                usage = user_data["usage"]
-                group_id = user_data["group_id"]
-                
-                # 获取用户限制
-                limit = self._get_user_limit(user_id, group_id)
-                
-                if limit == float('inf'):
-                    limit_text = "无限制"
+            for i, entry_data in enumerate(top_entries, 1):
+                if entry_data["type"] == "group":
+                    # 群组条目
+                    group_id = entry_data["group_id"]
+                    usage = entry_data["usage"]
+                    
+                    # 获取群组限制
+                    limit = self._get_user_limit("dummy_user", group_id)  # 使用虚拟用户ID获取群组限制
+                    
+                    if limit == float('inf'):
+                        limit_text = "无限制"
+                    else:
+                        limit_text = f"{limit}次"
+                    
+                    leaderboard_msg += f"{i}. 群组 {group_id} - {usage}次 (限制: {limit_text})\n"
                 else:
-                    limit_text = f"{limit}次"
-                
-                leaderboard_msg += f"{i}. 用户 {user_id} - {usage}次 (限制: {limit_text})\n"
+                    # 个人条目
+                    user_id = entry_data["user_id"]
+                    usage = entry_data["usage"]
+                    group_id = entry_data["group_id"]
+                    
+                    # 获取用户限制
+                    limit = self._get_user_limit(user_id, group_id)
+                    
+                    if limit == float('inf'):
+                        limit_text = "无限制"
+                    else:
+                        limit_text = f"{limit}次"
+                    
+                    leaderboard_msg += f"{i}. 用户 {user_id} - {usage}次 (限制: {limit_text})\n"
 
             await event.send(MessageChain().message(leaderboard_msg))
 
@@ -588,7 +669,7 @@ class DailyLimitPlugin(star.Star):
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("reset")
     async def limit_reset(self, event: AstrMessageEvent, user_id: str = None):
-        """重置用户使用次数（仅管理员）"""
+        """重置使用次数（仅管理员）"""
         if not self.redis:
             event.set_result(MessageEventResult().message("Redis未连接，无法重置使用次数"))
             return
@@ -598,24 +679,26 @@ class DailyLimitPlugin(star.Star):
                 # 显示重置帮助信息
                 help_msg = (
                     "🔄 重置使用次数命令用法：\n"
-                    "• /limit reset all - 重置所有用户的使用次数\n"
+                    "• /limit reset all - 重置所有使用记录（包括个人和群组）\n"
                     "• /limit reset <用户ID> - 重置特定用户的使用次数\n"
+                    "• /limit reset group <群组ID> - 重置特定群组的使用次数\n"
                     "示例：\n"
-                    "• /limit reset all - 重置所有用户的使用次数\n"
-                    "• /limit reset 123456 - 重置用户123456的使用次数"
+                    "• /limit reset all - 重置所有使用记录\n"
+                    "• /limit reset 123456 - 重置用户123456的使用次数\n"
+                    "• /limit reset group 789012 - 重置群组789012的使用次数"
                 )
                 event.set_result(MessageEventResult().message(help_msg))
                 return
 
             if user_id.lower() == "all":
-                # 重置所有用户
+                # 重置所有使用记录
                 today_key = self._get_today_key()
                 pattern = f"{today_key}:*"
                 
                 keys = self.redis.keys(pattern)
                 
                 if not keys:
-                    event.set_result(MessageEventResult().message("✅ 当前没有用户使用记录需要重置"))
+                    event.set_result(MessageEventResult().message("✅ 当前没有使用记录需要重置"))
                     return
                 
                 deleted_count = 0
@@ -623,7 +706,41 @@ class DailyLimitPlugin(star.Star):
                     self.redis.delete(key)
                     deleted_count += 1
                 
-                event.set_result(MessageEventResult().message(f"✅ 已重置所有用户的使用次数，共清理 {deleted_count} 条记录"))
+                event.set_result(MessageEventResult().message(f"✅ 已重置所有使用记录，共清理 {deleted_count} 条记录"))
+                
+            elif user_id.lower().startswith("group "):
+                # 重置特定群组
+                group_id = user_id[6:].strip()  # 移除"group "前缀
+                
+                # 验证群组ID格式
+                if not group_id.isdigit():
+                    event.set_result(MessageEventResult().message("❌ 群组ID格式错误，请输入数字ID"))
+                    return
+
+                # 查找并删除该群组的所有使用记录
+                today_key = self._get_today_key()
+                
+                # 删除群组共享记录
+                group_key = self._get_group_key(group_id)
+                group_deleted = 0
+                if self.redis.exists(group_key):
+                    self.redis.delete(group_key)
+                    group_deleted += 1
+                
+                # 删除该群组下所有用户的个人记录
+                pattern = f"{today_key}:{group_id}:*"
+                user_keys = self.redis.keys(pattern)
+                user_deleted = 0
+                for key in user_keys:
+                    self.redis.delete(key)
+                    user_deleted += 1
+                
+                total_deleted = group_deleted + user_deleted
+                
+                if total_deleted == 0:
+                    event.set_result(MessageEventResult().message(f"❌ 未找到群组 {group_id} 的使用记录"))
+                else:
+                    event.set_result(MessageEventResult().message(f"✅ 已重置群组 {group_id} 的使用次数，共清理 {total_deleted} 条记录（群组: {group_deleted}, 用户: {user_deleted}）"))
                 
             else:
                 # 重置特定用户
