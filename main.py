@@ -115,6 +115,7 @@ class DailyLimitPlugin(star.Star):
         """获取用户在特定群组的Redis键"""
         if group_id is None:
             group_id = "private_chat"
+        
         return f"{self._get_today_key()}:{group_id}:{user_id}"
 
     def _get_user_limit(self, user_id, group_id=None):
@@ -135,7 +136,7 @@ class DailyLimitPlugin(star.Star):
         return self.config["limits"]["default_daily_limit"]
 
     def _get_user_usage(self, user_id, group_id=None):
-        """获取用户今日已使用次数"""
+        """获取用户已使用次数"""
         if not self.redis:
             return 0
 
@@ -149,7 +150,7 @@ class DailyLimitPlugin(star.Star):
             return False
 
         key = self._get_user_key(user_id, group_id)
-        # 增加计数并设置过期时间（确保第二天自动重置）
+        # 增加计数并设置过期时间
         pipe = self.redis.pipeline()
         pipe.incr(key)
 
@@ -183,32 +184,31 @@ class DailyLimitPlugin(star.Star):
             # 获取群组ID和用户ID
             group_id = event.get_group_id()
 
-        # 获取用户限制和使用情况
+        # 检查限制
         limit = self._get_user_limit(user_id, group_id)
         usage = self._get_user_usage(user_id, group_id)
 
         # 检查是否超过限制
         if usage >= limit:
-            logger.info(f"用户 {user_id} 在群 {group_id} 中已达到今日调用限制 {limit}")
+            logger.info(f"用户 {user_id} 在群 {group_id} 中已达到调用限制 {limit}")
             if group_id is not None:
                 user_name = event.get_sender_name()
                 await event.send(
-                    MessageChain().at(user_name, user_id).message(f"您今日的AI访问次数已达上限，"
-                                                                  f"请明天再试或联系管理员提升限额。")
+                    MessageChain().at(user_name, user_id).message(f"您的AI访问次数已达上限，"
+                                                                  f"请稍后再试或联系管理员提升限额。")
                 )
             else:
                 await event.send(
-                    MessageChain().message(f"您今日的AI访问次数已达上限，"
-                                           f"请明天再试或联系管理员提升限额。")
+                    MessageChain().message(f"您的AI访问次数已达上限，"
+                                           f"请稍后再试或联系管理员提升限额。")
                 )
             event.stop_event()  # 终止事件传播
-
             return False
 
         # 检查是否需要提醒剩余次数（当剩余次数为1、3、5时提醒）
         remaining = limit - usage
         if remaining in [1, 3, 5]:
-            reminder_msg = f"💡 提醒：您今日剩余AI调用次数为 {remaining} 次"
+            reminder_msg = f"💡 提醒：您剩余AI调用次数为 {remaining} 次"
             if group_id is not None:
                 user_name = event.get_sender_name()
                 await event.send(
@@ -221,6 +221,7 @@ class DailyLimitPlugin(star.Star):
 
         # 增加用户使用次数
         self._increment_user_usage(user_id, group_id)
+        
         return True  # 允许继续处理
 
     @filter.command("limit_status")
@@ -231,13 +232,15 @@ class DailyLimitPlugin(star.Star):
         if event.get_message_type() == MessageType.GROUP_MESSAGE:
             group_id = event.get_group_id()
 
+        # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
         usage = self._get_user_usage(user_id, group_id)
-
+        
         if limit == float('inf'):
             status_msg = "您没有调用次数限制"
         else:
-            status_msg = f"您今日已使用 {usage}/{limit} 次AI"
+            remaining = limit - usage
+            status_msg = f"您今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
 
         event.set_result(MessageEventResult().message(status_msg))
 
@@ -258,6 +261,8 @@ class DailyLimitPlugin(star.Star):
             "• /limit list_user - 列出所有用户特定限制\n"
             "• /limit list_group - 列出所有群组特定限制\n"
             "• /limit stats - 查看插件使用统计信息\n"
+            "• /limit top [数量] - 查看使用次数排行榜\n"
+            "• /limit status - 检查插件状态和健康状态\n"
             "• /limit reset <用户ID|all> - 重置用户使用次数\n\n"
             "💡 说明：\n"
             "- 默认限制：所有用户每日调用次数\n"
@@ -442,59 +447,207 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message("获取统计信息失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("status")
+    async def limit_status_admin(self, event: AstrMessageEvent):
+        """检查插件状态和健康状态（仅管理员）"""
+        try:
+            # 检查Redis连接状态
+            redis_status = "✅ 正常" if self.redis else "❌ 未连接"
+            
+            # 检查Redis连接是否可用
+            redis_available = False
+            if self.redis:
+                try:
+                    self.redis.ping()
+                    redis_available = True
+                except:
+                    redis_available = False
+            
+            redis_available_status = "✅ 可用" if redis_available else "❌ 不可用"
+            
+            # 获取配置信息
+            default_limit = self.config["limits"]["default_daily_limit"]
+            exempt_users_count = len(self.config["limits"]["exempt_users"])
+            group_limits_count = len(self.group_limits)
+            user_limits_count = len(self.user_limits)
+            
+            # 获取今日统计
+            today_stats = "无法获取"
+            if self.redis and redis_available:
+                try:
+                    today_key = self._get_today_key()
+                    pattern = f"{today_key}:*"
+                    keys = self.redis.keys(pattern)
+                    
+                    total_calls = 0
+                    active_users = 0
+                    
+                    for key in keys:
+                        usage = self.redis.get(key)
+                        if usage:
+                            total_calls += int(usage)
+                            active_users += 1
+                    
+                    today_stats = f"活跃用户: {active_users}, 总调用: {total_calls}"
+                except:
+                    today_stats = "获取失败"
+            
+            # 构建状态报告
+            status_msg = (
+                "🔍 插件状态监控报告\n\n"
+                f"📊 Redis连接状态: {redis_status}\n"
+                f"🔌 Redis可用性: {redis_available_status}\n\n"
+                f"⚙️ 配置信息:\n"
+                f"• 默认限制: {default_limit} 次/天\n"
+                f"• 豁免用户数: {exempt_users_count} 个\n"
+                f"• 群组限制数: {group_limits_count} 个\n"
+                f"• 用户限制数: {user_limits_count} 个\n\n"
+                f"📈 今日统计: {today_stats}\n\n"
+                f"💡 健康状态: {'✅ 健康' if self.redis and redis_available else '⚠️ 需要检查'}"
+            )
+            
+            await event.send(MessageChain().message(status_msg))
+            
+        except Exception as e:
+            logger.error(f"检查插件状态失败: {str(e)}")
+            await event.send(MessageChain().message("❌ 检查插件状态失败"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("top")
+    async def limit_top(self, event: AstrMessageEvent, count: int = 10):
+        """显示使用次数排行榜"""
+        if not self.redis:
+            await event.send(MessageChain().message("❌ Redis未连接，无法获取排行榜"))
+            return
+
+        # 验证参数
+        if count < 1 or count > 20:
+            await event.send(MessageChain().message("❌ 排行榜数量应在1-20之间"))
+            return
+
+        try:
+            # 获取今日的键模式
+            pattern = f"{self._get_today_key()}:*"
+
+            keys = self.redis.keys(pattern)
+            
+            if not keys:
+                await event.send(MessageChain().message("📊 今日暂无用户使用记录"))
+                return
+
+            # 获取所有键对应的使用次数
+            usage_data = []
+            for key in keys:
+                usage = self.redis.get(key)
+                if usage:
+                    # 从键名中提取用户ID和群组ID
+                    parts = key.split(":")
+                    if len(parts) >= 5:
+                        group_id = parts[-2]
+                        user_id = parts[-1]
+                        usage_data.append({
+                            "user_id": user_id,
+                            "group_id": group_id,
+                            "usage": int(usage)
+                        })
+
+            # 按使用次数排序
+            usage_data.sort(key=lambda x: x["usage"], reverse=True)
+            
+            # 取前count名
+            top_users = usage_data[:count]
+            
+            if not top_users:
+                await event.send(MessageChain().message("📊 今日暂无用户使用记录"))
+                return
+
+            # 构建排行榜消息
+            leaderboard_msg = f"🏆 今日使用次数排行榜（前{len(top_users)}名）\n\n"
+            
+            for i, user_data in enumerate(top_users, 1):
+                user_id = user_data["user_id"]
+                usage = user_data["usage"]
+                group_id = user_data["group_id"]
+                
+                # 获取用户限制
+                limit = self._get_user_limit(user_id, group_id)
+                
+                if limit == float('inf'):
+                    limit_text = "无限制"
+                else:
+                    limit_text = f"{limit}次"
+                
+                leaderboard_msg += f"{i}. 用户 {user_id} - {usage}次 (限制: {limit_text})\n"
+
+            await event.send(MessageChain().message(leaderboard_msg))
+
+        except Exception as e:
+            logger.error(f"获取排行榜失败: {str(e)}")
+            await event.send(MessageChain().message("❌ 获取排行榜失败，请稍后重试"))
+
+    @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("reset")
-    async def limit_reset(self, event: AstrMessageEvent, args: str = ""):
+    async def limit_reset(self, event: AstrMessageEvent, user_id: str = None):
         """重置用户使用次数（仅管理员）"""
         if not self.redis:
             event.set_result(MessageEventResult().message("Redis未连接，无法重置使用次数"))
             return
 
         try:
-            if args.strip() == "all":
-                # 重置所有用户的使用次数
-                today_key = self._get_today_key()
-                pattern = f"{today_key}:*"
-                keys = self.redis.keys(pattern)
-                
-                if not keys:
-                    event.set_result(MessageEventResult().message("今日暂无用户使用记录"))
-                    return
-                
-                for key in keys:
-                    self.redis.delete(key)
-                
-                event.set_result(MessageEventResult().message(f"✅ 已重置所有用户的使用次数，共清理 {len(keys)} 条记录"))
-                
-            elif args.strip():
-                # 重置特定用户的使用次数
-                user_id = args.strip()
-                
-                # 验证用户ID格式
-                if not user_id or not user_id.isdigit():
-                    event.set_result(MessageEventResult().message("❌ 用户ID格式错误，请输入纯数字用户ID"))
-                    return
-                
-                # 删除用户今日所有群组和私聊的使用记录
-                today_key = self._get_today_key()
-                pattern = f"{today_key}:*:{user_id}"
-                keys = self.redis.keys(pattern)
-                
-                if keys:
-                    for key in keys:
-                        self.redis.delete(key)
-                    event.set_result(MessageEventResult().message(f"✅ 已重置用户 {user_id} 的使用次数"))
-                else:
-                    event.set_result(MessageEventResult().message(f"❌ 用户 {user_id} 今日暂无使用记录"))
-                    
-            else:
+            if user_id is None:
                 # 显示重置帮助信息
                 help_msg = (
                     "🔄 重置使用次数命令用法：\n"
                     "• /limit reset all - 重置所有用户的使用次数\n"
                     "• /limit reset <用户ID> - 重置特定用户的使用次数\n"
-                    "示例：/limit reset 123456"
+                    "示例：\n"
+                    "• /limit reset all - 重置所有用户的使用次数\n"
+                    "• /limit reset 123456 - 重置用户123456的使用次数"
                 )
                 event.set_result(MessageEventResult().message(help_msg))
+                return
+
+            if user_id.lower() == "all":
+                # 重置所有用户
+                today_key = self._get_today_key()
+                pattern = f"{today_key}:*"
+                
+                keys = self.redis.keys(pattern)
+                
+                if not keys:
+                    event.set_result(MessageEventResult().message("✅ 当前没有用户使用记录需要重置"))
+                    return
+                
+                deleted_count = 0
+                for key in keys:
+                    self.redis.delete(key)
+                    deleted_count += 1
+                
+                event.set_result(MessageEventResult().message(f"✅ 已重置所有用户的使用次数，共清理 {deleted_count} 条记录"))
+                
+            else:
+                # 重置特定用户
+                # 验证用户ID格式
+                if not user_id.isdigit():
+                    event.set_result(MessageEventResult().message("❌ 用户ID格式错误，请输入数字ID"))
+                    return
+
+                # 查找并删除该用户的所有使用记录
+                today_key = self._get_today_key()
+                pattern = f"{today_key}:*:{user_id}"
+                
+                keys = self.redis.keys(pattern)
+                
+                if not keys:
+                    event.set_result(MessageEventResult().message(f"❌ 未找到用户 {user_id} 的使用记录"))
+                    return
+                
+                deleted_count = 0
+                for key in keys:
+                    self.redis.delete(key)
+                    deleted_count += 1
+                
+                event.set_result(MessageEventResult().message(f"✅ 已重置用户 {user_id} 的使用次数，共清理 {deleted_count} 条记录"))
                 
         except Exception as e:
             logger.error(f"重置使用次数失败: {str(e)}")
