@@ -205,6 +205,20 @@ class DailyLimitPlugin(star.Star):
 
             return False
 
+        # 检查是否需要提醒剩余次数（当剩余次数为1、3、5时提醒）
+        remaining = limit - usage
+        if remaining in [1, 3, 5]:
+            reminder_msg = f"💡 提醒：您今日剩余AI调用次数为 {remaining} 次"
+            if group_id is not None:
+                user_name = event.get_sender_name()
+                await event.send(
+                    MessageChain().at(user_name, user_id).message(reminder_msg)
+                )
+            else:
+                await event.send(
+                    MessageChain().message(reminder_msg)
+                )
+
         # 增加用户使用次数
         self._increment_user_usage(user_id, group_id)
         return True  # 允许继续处理
@@ -243,12 +257,14 @@ class DailyLimitPlugin(star.Star):
             "• /limit unexempt <用户ID> - 将用户从豁免列表移除\n"
             "• /limit list_user - 列出所有用户特定限制\n"
             "• /limit list_group - 列出所有群组特定限制\n"
-            "• /limit stats - 查看插件使用统计信息\n\n"
+            "• /limit stats - 查看插件使用统计信息\n"
+            "• /limit reset <用户ID|all> - 重置用户使用次数\n\n"
             "💡 说明：\n"
             "- 默认限制：所有用户每日调用次数\n"
             "- 群组限制：可针对特定群组设置不同限制\n"
             "- 用户限制：可针对特定用户设置不同限制\n"
-            "- 豁免用户：不受限制的用户列表"
+            "- 豁免用户：不受限制的用户列表\n"
+            "- 剩余次数提醒：当剩余1、3、5次时会自动提醒"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -424,6 +440,65 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             logger.error(f"获取统计信息失败: {str(e)}")
             event.set_result(MessageEventResult().message("获取统计信息失败"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("reset")
+    async def limit_reset(self, event: AstrMessageEvent, args: str = ""):
+        """重置用户使用次数（仅管理员）"""
+        if not self.redis:
+            event.set_result(MessageEventResult().message("Redis未连接，无法重置使用次数"))
+            return
+
+        try:
+            if args.strip() == "all":
+                # 重置所有用户的使用次数
+                today_key = self._get_today_key()
+                pattern = f"{today_key}:*"
+                keys = self.redis.keys(pattern)
+                
+                if not keys:
+                    event.set_result(MessageEventResult().message("今日暂无用户使用记录"))
+                    return
+                
+                for key in keys:
+                    self.redis.delete(key)
+                
+                event.set_result(MessageEventResult().message(f"✅ 已重置所有用户的使用次数，共清理 {len(keys)} 条记录"))
+                
+            elif args.strip():
+                # 重置特定用户的使用次数
+                user_id = args.strip()
+                
+                # 验证用户ID格式
+                if not user_id or not user_id.isdigit():
+                    event.set_result(MessageEventResult().message("❌ 用户ID格式错误，请输入纯数字用户ID"))
+                    return
+                
+                # 删除用户今日所有群组和私聊的使用记录
+                today_key = self._get_today_key()
+                pattern = f"{today_key}:*:{user_id}"
+                keys = self.redis.keys(pattern)
+                
+                if keys:
+                    for key in keys:
+                        self.redis.delete(key)
+                    event.set_result(MessageEventResult().message(f"✅ 已重置用户 {user_id} 的使用次数"))
+                else:
+                    event.set_result(MessageEventResult().message(f"❌ 用户 {user_id} 今日暂无使用记录"))
+                    
+            else:
+                # 显示重置帮助信息
+                help_msg = (
+                    "🔄 重置使用次数命令用法：\n"
+                    "• /limit reset all - 重置所有用户的使用次数\n"
+                    "• /limit reset <用户ID> - 重置特定用户的使用次数\n"
+                    "示例：/limit reset 123456"
+                )
+                event.set_result(MessageEventResult().message(help_msg))
+                
+        except Exception as e:
+            logger.error(f"重置使用次数失败: {str(e)}")
+            event.set_result(MessageEventResult().message("重置使用次数失败，请检查Redis连接"))
 
     async def terminate(self):
         """插件终止时的清理工作"""
