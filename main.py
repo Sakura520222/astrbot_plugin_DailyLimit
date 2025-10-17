@@ -18,7 +18,7 @@ from astrbot.api import logger
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666",
-    version="v2.1",
+    version="v2.2",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -30,6 +30,7 @@ class DailyLimitPlugin(star.Star):
         self.config = config
         self.group_limits = {}  # 群组特定限制 {"group_id": limit_count}
         self.user_limits = {}  # 用户特定限制 {"user_id": limit_count}
+        self.group_modes = {}  # 群组模式配置 {"group_id": "shared"或"individual"}
         self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
 
         # 加载群组和用户特定限制
@@ -54,7 +55,14 @@ class DailyLimitPlugin(star.Star):
             if user_id and limit is not None:
                 self.user_limits[str(user_id)] = limit
 
-        logger.info(f"已加载 {len(self.group_limits)} 个群组限制和 {len(self.user_limits)} 个用户限制")
+        # 加载群组模式配置
+        for group_mode in self.config["limits"]["group_mode_settings"]:
+            group_id = group_mode.get("group_id")
+            mode = group_mode.get("mode")
+            if group_id and mode in ["shared", "individual"]:
+                self.group_modes[str(group_id)] = mode
+
+        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制和 {len(self.group_modes)} 个群组模式配置")
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件"""
@@ -88,6 +96,23 @@ class DailyLimitPlugin(star.Star):
 
         # 添加新的用户限制
         user_limits.append({"user_id": user_id, "limit": limit})
+        self.config.save_config()
+
+    def _save_group_mode(self, group_id, mode):
+        """保存群组模式配置到配置文件"""
+        group_id = str(group_id)
+
+        # 检查是否已存在该群组的模式配置
+        group_modes = self.config["limits"]["group_mode_settings"]
+        for i, group_mode in enumerate(group_modes):
+            if str(group_mode.get("group_id")) == group_id:
+                # 更新现有模式
+                group_modes[i]["mode"] = mode
+                self.config.save_config()
+                return
+
+        # 添加新的群组模式配置
+        group_modes.append({"group_id": group_id, "mode": mode})
         self.config.save_config()
 
     def _init_redis(self):
@@ -140,6 +165,18 @@ class DailyLimitPlugin(star.Star):
             date_str = datetime.datetime.now().strftime("%Y-%m-%d")
         
         return f"astrbot:usage_stats:{date_str}"
+
+    def _get_group_mode(self, group_id):
+        """获取群组的模式配置"""
+        if not group_id:
+            return "individual"  # 私聊默认为独立模式
+        
+        # 检查是否有特定群组模式配置
+        if str(group_id) in self.group_modes:
+            return self.group_modes[str(group_id)]
+        
+        # 默认使用共享模式（保持向后兼容性）
+        return "shared"
 
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
@@ -306,21 +343,37 @@ class DailyLimitPlugin(star.Star):
         # 检查限制
         limit = self._get_user_limit(user_id, group_id)
         
-        # 如果是群组消息，使用群组共享使用次数；否则使用个人使用次数
+        # 根据群组模式决定使用哪种计数方式
         if group_id is not None:
-            usage = self._get_group_usage(group_id)
+            group_mode = self._get_group_mode(group_id)
+            if group_mode == "shared":
+                # 共享模式：使用群组共享使用次数
+                usage = self._get_group_usage(group_id)
+                usage_type = "群组共享"
+            else:
+                # 独立模式：使用用户个人使用次数
+                usage = self._get_user_usage(user_id, group_id)
+                usage_type = "个人独立"
         else:
+            # 私聊消息：使用个人使用次数
             usage = self._get_user_usage(user_id, group_id)
+            usage_type = "个人"
 
         # 检查是否超过限制
         if usage >= limit:
             logger.info(f"用户 {user_id} 在群 {group_id} 中已达到调用限制 {limit}")
             if group_id is not None:
                 user_name = event.get_sender_name()
-                await event.send(
-                    MessageChain().at(user_name, user_id).message(f"本群组AI访问次数已达上限（{usage}/{limit}），"
-                                                                  f"请稍后再试或联系管理员提升限额。")
-                )
+                if self._get_group_mode(group_id) == "shared":
+                    await event.send(
+                        MessageChain().at(user_name, user_id).message(f"本群组AI访问次数已达上限（{usage}/{limit}），"
+                                                                      f"请稍后再试或联系管理员提升限额。")
+                    )
+                else:
+                    await event.send(
+                        MessageChain().at(user_name, user_id).message(f"您在本群组的AI访问次数已达上限（{usage}/{limit}），"
+                                                                      f"请稍后再试或联系管理员提升限额。")
+                    )
             else:
                 await event.send(
                     MessageChain().message(f"您的AI访问次数已达上限（{usage}/{limit}），"
@@ -333,8 +386,11 @@ class DailyLimitPlugin(star.Star):
         remaining = limit - usage
         if remaining in [1, 3, 5]:
             if group_id is not None:
-                reminder_msg = f"💡 提醒：本群组剩余AI调用次数为 {remaining} 次"
                 user_name = event.get_sender_name()
+                if self._get_group_mode(group_id) == "shared":
+                    reminder_msg = f"💡 提醒：本群组剩余AI调用次数为 {remaining} 次"
+                else:
+                    reminder_msg = f"💡 提醒：您在本群组剩余AI调用次数为 {remaining} 次"
                 await event.send(
                     MessageChain().at(user_name, user_id).message(reminder_msg)
                 )
@@ -346,7 +402,11 @@ class DailyLimitPlugin(star.Star):
 
         # 增加使用次数
         if group_id is not None:
-            self._increment_group_usage(group_id)
+            group_mode = self._get_group_mode(group_id)
+            if group_mode == "shared":
+                self._increment_group_usage(group_id)
+            else:
+                self._increment_user_usage(user_id, group_id)
         else:
             self._increment_user_usage(user_id, group_id)
         
@@ -366,23 +426,48 @@ class DailyLimitPlugin(star.Star):
         # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
         
-        # 如果是群组消息，显示群组共享状态；否则显示个人状态
+        # 根据群组模式显示正确的状态信息
         if group_id is not None:
-            usage = self._get_group_usage(group_id)
-            # 首先检查是否被豁免（无限制）
-            if limit == float('inf'):
-                # 群组被豁免（无限制）
-                status_msg = "本群组没有调用次数限制"
-            # 然后检查群组是否设置了特定限制
-            elif str(group_id) in self.group_limits:
-                # 群组有特定限制
-                remaining = limit - usage
-                status_msg = f"本群组今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
+            group_mode = self._get_group_mode(group_id)
+            if group_mode == "shared":
+                # 共享模式：显示群组共享状态
+                usage = self._get_group_usage(group_id)
+                # 首先检查是否被豁免（无限制）
+                if limit == float('inf'):
+                    # 群组被豁免（无限制）
+                    status_msg = "本群组没有调用次数限制（共享模式）"
+                # 然后检查群组是否设置了特定限制
+                elif str(group_id) in self.group_limits:
+                    # 群组有特定限制
+                    remaining = limit - usage
+                    status_msg = f"本群组今日已使用 {usage}/{limit} 次（共享模式），剩余 {remaining} 次"
+                else:
+                    # 群组使用默认限制
+                    remaining = limit - usage
+                    status_msg = f"本群组今日已使用 {usage}/{limit} 次（默认限制，共享模式），剩余 {remaining} 次"
             else:
-                # 群组使用默认限制
-                remaining = limit - usage
-                status_msg = f"本群组今日已使用 {usage}/{limit} 次（默认限制），剩余 {remaining} 次"
+                # 独立模式：显示用户个人状态
+                usage = self._get_user_usage(user_id, group_id)
+                # 首先检查是否被豁免（无限制）
+                if limit == float('inf'):
+                    # 用户被豁免（无限制）
+                    status_msg = "您在本群组没有调用次数限制（独立模式）"
+                # 然后检查用户是否设置了特定限制
+                elif str(user_id) in self.user_limits:
+                    # 用户有特定限制
+                    remaining = limit - usage
+                    status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（独立模式），剩余 {remaining} 次"
+                # 检查群组是否设置了特定限制
+                elif str(group_id) in self.group_limits:
+                    # 群组有特定限制
+                    remaining = limit - usage
+                    status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（群组限制，独立模式），剩余 {remaining} 次"
+                else:
+                    # 使用默认限制
+                    remaining = limit - usage
+                    status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（默认限制，独立模式），剩余 {remaining} 次"
         else:
+            # 私聊消息：显示个人状态
             usage = self._get_user_usage(user_id, group_id)
             if limit == float('inf'):
                 status_msg = "您没有调用次数限制"
@@ -442,6 +527,8 @@ class DailyLimitPlugin(star.Star):
             "- /limit help：显示此帮助信息\n"
             "- /limit set <用户ID> <次数>：设置特定用户的限制\n"
             "- /limit setgroup <次数>：设置当前群组的限制\n"
+            "- /limit setmode <shared|individual>：设置当前群组使用模式（共享/独立）\n"
+            "- /limit getmode：查看当前群组使用模式\n"
             "- /limit exempt <用户ID>：将用户添加到豁免列表\n"
             "- /limit unexempt <用户ID>：将用户从豁免列表移除\n"
             "- /limit list_user：列出所有用户特定限制\n"
@@ -452,6 +539,9 @@ class DailyLimitPlugin(star.Star):
             "- /limit top [数量]：查看使用次数排行榜\n"
             "- /limit status：检查插件状态和健康状态\n"
             "- /limit reset <用户ID|all>：重置使用次数\n"
+            "\n使用模式说明：\n"
+            "- 共享模式：群组内所有成员共享使用次数\n"
+            "- 独立模式：群组内每个成员有独立的使用次数\n"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -504,6 +594,43 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message(f"已设置当前群组的每日调用限制为 {limit} 次"))
         except ValueError:
             event.set_result(MessageEventResult().message("限制次数必须为整数"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("setmode")
+    async def limit_setmode(self, event: AstrMessageEvent, mode: str = None):
+        """设置当前群组的使用模式（仅管理员）"""
+
+        if event.get_message_type() != MessageType.GROUP_MESSAGE:
+            event.set_result(MessageEventResult().message("此命令只能在群聊中使用"))
+            return
+
+        if mode is None:
+            event.set_result(MessageEventResult().message("用法: /limit setmode <shared|individual>"))
+            return
+
+        if mode not in ["shared", "individual"]:
+            event.set_result(MessageEventResult().message("模式必须是 'shared'（共享）或 'individual'（独立）"))
+            return
+
+        group_id = event.get_group_id()
+        self.group_modes[group_id] = mode
+        self._save_group_mode(group_id, mode)
+        mode_text = "共享" if mode == "shared" else "独立"
+        event.set_result(MessageEventResult().message(f"已设置当前群组的使用模式为 {mode_text} 模式"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("getmode")
+    async def limit_getmode(self, event: AstrMessageEvent):
+        """查看当前群组的使用模式（仅管理员）"""
+
+        if event.get_message_type() != MessageType.GROUP_MESSAGE:
+            event.set_result(MessageEventResult().message("此命令只能在群聊中使用"))
+            return
+
+        group_id = event.get_group_id()
+        mode = self._get_group_mode(group_id)
+        mode_text = "共享" if mode == "shared" else "独立"
+        event.set_result(MessageEventResult().message(f"当前群组的使用模式为 {mode_text} 模式"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("exempt")

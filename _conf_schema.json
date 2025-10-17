@@ -58,6 +58,26 @@
                     }
                 }
             },
+            "group_mode_settings": {
+                "description": "群组模式配置",
+                "type": "list",
+                "default": [],
+                "hint": "格式为：{\"group_id\": 群组ID, \"mode\": \"shared\"或\"individual\"}",
+                "items": {
+                    "type": "object",
+                    "items": {
+                        "group_id": {
+                            "description": "群组ID",
+                            "type": "string"
+                        },
+                        "mode": {
+                            "description": "群组模式：shared(共享)或individual(独立)",
+                            "type": "string",
+                            "enum": ["shared", "individual"]
+                        }
+                    }
+                }
+            },
             "user_limits": {
                 "description": "特定用户限制",
                 "type": "list",
