@@ -17,7 +17,7 @@ from astrbot.api import logger
 
 @star.register(
     name="DailyLimit",
-    desc="限制用户每日调用大模型的次数",
+    desc="限制用户调用大模型的次数",
     author="Sakura520222",
     version="v2.3",
     repo="https://github.com/Sakura520222/astrbot_plugin_DailyLimit"
@@ -149,6 +149,47 @@ class DailyLimitPlugin(star.Star):
     def _get_group_key(self, group_id):
         """获取群组共享的Redis键"""
         return f"{self._get_today_key()}:group:{group_id}"
+
+    def _parse_redis_key(self, key: str) -> dict:
+        """解析Redis键，返回结构化信息"""
+        parts = key.split(":")
+        
+        # 基本验证
+        if len(parts) < 4 or parts[0] != "astrbot" or parts[1] != "daily_limit":
+            return None
+            
+        result = {
+            "date": parts[2],
+            "type": None,
+            "group_id": None,
+            "user_id": None
+        }
+        
+        # 解析键类型
+        if "group" in parts:
+            try:
+                group_index = parts.index("group")
+                if group_index + 1 < len(parts):
+                    result["type"] = "group"
+                    result["group_id"] = parts[group_index + 1]
+            except ValueError:
+                pass
+        elif "private_chat" in parts:
+            try:
+                private_index = parts.index("private_chat")
+                if private_index + 1 < len(parts):
+                    result["type"] = "user"
+                    result["user_id"] = parts[private_index + 1]
+            except ValueError:
+                pass
+        elif len(parts) >= 5:
+            # 格式: astrbot:daily_limit:2025-01-23:群组ID:用户ID
+            if parts[-2].isdigit() and parts[-1].isdigit():
+                result["type"] = "user"
+                result["group_id"] = parts[-2]
+                result["user_id"] = parts[-1]
+        
+        return result if result["type"] else None
 
     def _get_usage_record_key(self, user_id, group_id=None, date_str=None):
         """获取使用记录Redis键"""
@@ -392,42 +433,55 @@ class DailyLimitPlugin(star.Star):
             group_mode = self._get_group_mode(group_id)
             if group_mode == "shared":
                 # 共享模式：使用群组共享使用次数
-                usage = await self._get_group_usage(group_id)
+                key = self._get_group_key(group_id)
                 usage_type = "群组共享"
             else:
                 # 独立模式：使用用户个人使用次数
-                usage = await self._get_user_usage(user_id, group_id)
+                key = self._get_user_key(user_id, group_id)
                 usage_type = "个人独立"
         else:
             # 私聊消息：使用个人使用次数
-            usage = await self._get_user_usage(user_id, group_id)
+            key = self._get_user_key(user_id, group_id)
             usage_type = "个人"
 
+        # 使用原子操作检查和增加使用次数
+        new_usage = await self.redis.incr(key)
+        
+        # 如果是第一次使用，设置过期时间
+        if new_usage == 1:
+            tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+            tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+            seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+            await self.redis.expire(key, seconds_until_tomorrow)
+
         # 检查是否超过限制
-        if usage >= limit:
+        if new_usage > limit:
             logger.info(f"用户 {user_id} 在群 {group_id} 中已达到调用限制 {limit}")
+            # 撤销本次增加
+            await self.redis.decr(key)
+            
             if group_id is not None:
                 user_name = event.get_sender_name()
                 if self._get_group_mode(group_id) == "shared":
                     await event.send(
-                        MessageChain().at(user_name, user_id).message(f"本群组AI访问次数已达上限（{usage}/{limit}），"
+                        MessageChain().at(user_name, user_id).message(f"本群组AI访问次数已达上限（{limit}/{limit}），"
                                                                       f"请稍后再试或联系管理员提升限额。")
                     )
                 else:
                     await event.send(
-                        MessageChain().at(user_name, user_id).message(f"您在本群组的AI访问次数已达上限（{usage}/{limit}），"
+                        MessageChain().at(user_name, user_id).message(f"您在本群组的AI访问次数已达上限（{limit}/{limit}），"
                                                                       f"请稍后再试或联系管理员提升限额。")
                     )
             else:
                 await event.send(
-                    MessageChain().message(f"您的AI访问次数已达上限（{usage}/{limit}），"
+                    MessageChain().message(f"您的AI访问次数已达上限（{limit}/{limit}），"
                                            f"请稍后再试或联系管理员提升限额。")
                 )
             event.stop_event()  # 终止事件传播
             return False
 
         # 检查是否需要提醒剩余次数（当剩余次数为1、3、5时提醒）
-        remaining = limit - usage
+        remaining = limit - new_usage
         if remaining in [1, 3, 5]:
             if group_id is not None:
                 user_name = event.get_sender_name()
@@ -443,16 +497,6 @@ class DailyLimitPlugin(star.Star):
                 await event.send(
                     MessageChain().message(reminder_msg)
                 )
-
-        # 增加使用次数
-        if group_id is not None:
-            group_mode = self._get_group_mode(group_id)
-            if group_mode == "shared":
-                await self._increment_group_usage(group_id)
-            else:
-                await self._increment_user_usage(user_id, group_id)
-        else:
-            await self._increment_user_usage(user_id, group_id)
         
         # 记录使用记录
         await self._record_usage(user_id, group_id, "llm_request")
@@ -753,7 +797,9 @@ class DailyLimitPlugin(star.Star):
             # 获取今日所有用户的调用统计
             today_key = self._get_today_key()
             pattern = f"{today_key}:*"
-            keys = await self.redis.keys(pattern)
+            keys = []
+            async for key in self.redis.scan_iter(pattern):
+                keys.append(key)
             
             total_calls = 0
             active_users = 0
@@ -807,7 +853,9 @@ class DailyLimitPlugin(star.Star):
                     
                     # 查询群组记录
                     group_pattern = f"astrbot:usage_record:{date_str}:*:{user_id}"
-                    group_keys = await self.redis.keys(group_pattern)
+                    group_keys = []
+                    async for key in self.redis.scan_iter(group_pattern):
+                        group_keys.append(key)
                     
                     daily_total = len(private_records)
                     
@@ -872,11 +920,15 @@ class DailyLimitPlugin(star.Star):
             
             # 获取用户统计
             user_pattern = f"{stats_key}:user:*"
-            user_keys = await self.redis.keys(user_pattern)
+            user_keys = []
+            async for key in self.redis.scan_iter(user_pattern):
+                user_keys.append(key)
             
             # 获取群组统计
             group_pattern = f"{stats_key}:group:*"
-            group_keys = await self.redis.keys(group_pattern)
+            group_keys = []
+            async for key in self.redis.scan_iter(group_pattern):
+                group_keys.append(key)
             
             analytics_msg = f"📈 {date_str} 多维度统计分析：\n\n"
             
@@ -977,7 +1029,9 @@ class DailyLimitPlugin(star.Star):
                 try:
                     today_key = self._get_today_key()
                     pattern = f"{today_key}:*"
-                    keys = await self.redis.keys(pattern)
+                    keys = []
+                    async for key in self.redis.scan_iter(pattern):
+                        keys.append(key)
                     
                     total_calls = 0
                     active_users = 0
@@ -1029,7 +1083,9 @@ class DailyLimitPlugin(star.Star):
             # 获取今日的键模式 - 同时获取个人和群组键
             pattern = f"{self._get_today_key()}:*"
 
-            keys = await self.redis.keys(pattern)
+            keys = []
+            async for key in self.redis.scan_iter(pattern):
+                keys.append(key)
             
             if not keys:
                 await event.send(MessageChain().message("📊 今日暂无使用记录"))
@@ -1290,7 +1346,9 @@ class DailyLimitPlugin(star.Star):
                         date_key = f"astrbot:daily_limit:{date}"
                         pattern = f"{date_key}:*"
                         
-                        keys = await self.redis.keys(pattern)
+                        keys = []
+                        async for key in self.redis.scan_iter(pattern):
+                            keys.append(key)
                         for key in keys:
                             usage = await self.redis.get(key)
                             if usage:
@@ -1342,7 +1400,9 @@ class DailyLimitPlugin(star.Star):
                 today_key = self._get_today_key()
                 pattern = f"{today_key}:*"
                 
-                keys = await self.redis.keys(pattern)
+                keys = []
+                async for key in self.redis.scan_iter(pattern):
+                    keys.append(key)
                 
                 if not keys:
                     event.set_result(MessageEventResult().message("✅ 当前没有使用记录需要重置"))
@@ -1376,7 +1436,9 @@ class DailyLimitPlugin(star.Star):
                 
                 # 删除该群组下所有用户的个人记录
                 pattern = f"{today_key}:{group_id}:*"
-                user_keys = await self.redis.keys(pattern)
+                user_keys = []
+                async for key in self.redis.scan_iter(pattern):
+                    user_keys.append(key)
                 user_deleted = 0
                 for key in user_keys:
                     await self.redis.delete(key)
@@ -1400,7 +1462,9 @@ class DailyLimitPlugin(star.Star):
                 today_key = self._get_today_key()
                 pattern = f"{today_key}:*:{user_id}"
                 
-                keys = await self.redis.keys(pattern)
+                keys = []
+                async for key in self.redis.scan_iter(pattern):
+                    keys.append(key)
                 
                 if not keys:
                     event.set_result(MessageEventResult().message(f"❌ 未找到用户 {user_id} 的使用记录"))
