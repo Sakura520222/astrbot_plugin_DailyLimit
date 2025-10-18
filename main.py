@@ -15,11 +15,11 @@ from astrbot.api import logger
 
 
 @star.register(
-    name="daily_limit",
+    name="DailyLimit",
     desc="限制用户每日调用大模型的次数",
-    author="left666",
-    version="v2.2",
-    repo="https://github.com/left666/astrbot_plugin_daily_limit"
+    author="Sakura520222",
+    version="v2.3",
+    repo="https://github.com/Sakura520222/astrbot_plugin_DailyLimit"
 )
 class DailyLimitPlugin(star.Star):
     """限制群组成员每日调用大模型的次数"""
@@ -178,11 +178,54 @@ class DailyLimitPlugin(star.Star):
         # 默认使用共享模式（保持向后兼容性）
         return "shared"
 
+    def _get_current_time_period_limit(self):
+        """获取当前时间段适用的限制次数"""
+        current_time = datetime.datetime.now()
+        current_hour_minute = current_time.strftime("%H:%M")
+        
+        # 检查是否是周末
+        is_weekend = current_time.weekday() >= 5  # 5=周六, 6=周日
+        
+        # 遍历所有时间段限制配置
+        for time_period in self.config["limits"].get("time_period_limits", []):
+            if not time_period.get("enabled", True):
+                continue
+                
+            start_time = time_period.get("start_time", "00:00")
+            end_time = time_period.get("end_time", "23:59")
+            limit = time_period.get("limit", self.config["limits"]["default_daily_limit"])
+            
+            # 检查时间段名称是否包含"周末"，如果是则只在周末生效
+            period_name = time_period.get("name", "").lower()
+            if "周末" in period_name and not is_weekend:
+                continue
+            elif "周末" not in period_name and is_weekend:
+                # 如果是周末，但时间段名称不包含"周末"，则跳过非周末时间段
+                continue
+            
+            # 处理跨天的时间段（如22:00-06:00）
+            if start_time > end_time:
+                # 跨天时间段：当前时间在开始时间之后或结束时间之前
+                if current_hour_minute >= start_time or current_hour_minute <= end_time:
+                    return limit
+            else:
+                # 正常时间段：当前时间在开始时间和结束时间之间
+                if start_time <= current_hour_minute <= end_time:
+                    return limit
+        
+        # 如果没有匹配的时间段，返回默认限制
+        return None
+
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
         # 检查用户是否豁免
         if str(user_id) in self.config["limits"]["exempt_users"]:
             return float('inf')  # 无限制
+
+        # 首先检查时间段限制
+        time_period_limit = self._get_current_time_period_limit()
+        if time_period_limit is not None:
+            return time_period_limit
 
         # 检查用户特定限制
         if str(user_id) in self.user_limits:
@@ -1071,6 +1114,142 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             logger.error(f"获取排行榜失败: {str(e)}")
             await event.send(MessageChain().message("❌ 获取排行榜失败，请稍后重试"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("period")
+    async def limit_period(self, event: AstrMessageEvent):
+        """显示当前时间段限制状态"""
+        try:
+            # 获取当前时间段限制
+            current_period_limit = self._get_current_time_period_limit()
+            
+            # 获取时间段限制配置
+            time_period_limits = self.config.get("limits", {}).get("time_period_limits", [])
+            
+            if not time_period_limits:
+                await event.send(MessageChain().message("📊 当前未配置时间段限制"))
+                return
+            
+            # 构建时间段限制状态消息
+            period_msg = "🕐 时间段限制配置状态\n\n"
+            
+            for period_config in time_period_limits:
+                name = period_config.get("name", "未命名")
+                start_time = period_config.get("start_time", "00:00")
+                end_time = period_config.get("end_time", "23:59")
+                limit = period_config.get("limit", 0)
+                enabled = period_config.get("enabled", False)
+                
+                # 检查是否为当前时间段
+                is_current = False
+                if current_period_limit and current_period_limit.get("name") == name:
+                    is_current = True
+                
+                status_icon = "✅" if enabled else "❌"
+                current_icon = "🔵" if is_current else "⚪"
+                
+                period_msg += f"{status_icon} {current_icon} {name}\n"
+                period_msg += f"   时间: {start_time} - {end_time}\n"
+                period_msg += f"   限制: {limit} 次\n"
+                period_msg += f"   状态: {'已启用' if enabled else '已禁用'}\n"
+                
+                if is_current:
+                    period_msg += f"   当前: 🔥 正在生效\n"
+                
+                period_msg += "\n"
+            
+            if current_period_limit:
+                period_msg += f"💡 当前生效限制: {current_period_limit.get('name')} - {current_period_limit.get('limit')} 次"
+            else:
+                period_msg += "💡 当前无生效的时间段限制"
+            
+            await event.send(MessageChain().message(period_msg))
+            
+        except Exception as e:
+            logger.error(f"显示时间段限制状态失败: {str(e)}")
+            await event.send(MessageChain().message("❌ 显示时间段限制状态失败"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("period_stats")
+    async def limit_period_stats(self, event: AstrMessageEvent, days: int = 7):
+        """显示时间段限制使用统计"""
+        if not self.redis:
+            await event.send(MessageChain().message("❌ Redis未连接，无法获取统计信息"))
+            return
+
+        # 验证参数
+        if days < 1 or days > 30:
+            await event.send(MessageChain().message("❌ 统计天数应在1-30之间"))
+            return
+
+        try:
+            # 获取时间段限制配置
+            time_period_limits = self.config.get("limits", {}).get("time_period_limits", [])
+            
+            if not time_period_limits:
+                await event.send(MessageChain().message("📊 当前未配置时间段限制"))
+                return
+
+            # 获取最近days天的使用记录
+            stats_msg = f"📊 时间段限制使用统计（最近{days}天）\n\n"
+            
+            for period_config in time_period_limits:
+                name = period_config.get("name", "未命名")
+                start_time = period_config.get("start_time", "00:00")
+                end_time = period_config.get("end_time", "23:59")
+                limit = period_config.get("limit", 0)
+                enabled = period_config.get("enabled", False)
+                
+                if not enabled:
+                    continue
+                
+                # 统计该时间段的使用情况
+                total_usage = 0
+                period_days = 0
+                
+                for i in range(days):
+                    date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+                    
+                    # 检查该日期是否在时间段内（处理周末判断）
+                    target_date = datetime.now() - timedelta(days=i)
+                    is_weekend = target_date.weekday() >= 5
+                    
+                    # 检查时间段是否适用于该日期
+                    period_applies = True
+                    if "周末" in name and not is_weekend:
+                        period_applies = False
+                    elif "工作日" in name and is_weekend:
+                        period_applies = False
+                    
+                    if period_applies:
+                        period_days += 1
+                        
+                        # 获取该日期的使用统计（简化处理，实际应该更精确）
+                        date_key = f"astrbot:daily_limit:{date}"
+                        pattern = f"{date_key}:*"
+                        
+                        keys = self.redis.keys(pattern)
+                        for key in keys:
+                            usage = self.redis.get(key)
+                            if usage:
+                                total_usage += int(usage)
+                
+                avg_usage = total_usage / period_days if period_days > 0 else 0
+                utilization = (avg_usage / limit * 100) if limit > 0 else 0
+                
+                stats_msg += f"🕐 {name}\n"
+                stats_msg += f"   时间: {start_time} - {end_time}\n"
+                stats_msg += f"   限制: {limit} 次\n"
+                stats_msg += f"   总使用: {total_usage} 次\n"
+                stats_msg += f"   适用天数: {period_days} 天\n"
+                stats_msg += f"   日均使用: {avg_usage:.1f} 次\n"
+                stats_msg += f"   利用率: {utilization:.1f}%\n\n"
+            
+            await event.send(MessageChain().message(stats_msg))
+            
+        except Exception as e:
+            logger.error(f"获取时间段限制统计失败: {str(e)}")
+            await event.send(MessageChain().message("❌ 获取时间段限制统计失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("reset")
