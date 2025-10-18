@@ -33,12 +33,14 @@ class DailyLimitPlugin(star.Star):
         self.user_limits = {}  # 用户特定限制 {"user_id": limit_count}
         self.group_modes = {}  # 群组模式配置 {"group_id": "shared"或"individual"}
         self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
+        self.redis = None  # 初始化redis属性为None
 
         # 加载群组和用户特定限制
         self._load_limits_from_config()
 
-        # 初始化Redis连接
-        self._init_redis()
+    async def start(self):
+        """插件启动时的初始化工作"""
+        await self._init_redis()
 
     def _load_limits_from_config(self):
         """从配置文件加载群组和用户特定限制"""
@@ -510,6 +512,11 @@ class DailyLimitPlugin(star.Star):
         group_id = None
         if event.get_message_type() == MessageType.GROUP_MESSAGE:
             group_id = event.get_group_id()
+
+        # 检查Redis连接状态
+        if not self.redis:
+            event.set_result(MessageEventResult().message("❌ 插件未正确初始化，请检查Redis连接配置"))
+            return
 
         # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
