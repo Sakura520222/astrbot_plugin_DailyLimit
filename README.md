@@ -270,8 +270,7 @@
 ### 🐛 问题反馈
 如遇到任何问题，请通过以下方式联系：
 - 📧 Telegram: [@TamakiSakura520](https://t.me/TamakiSakura520)
-- 💬 Issues: [GitHub Issues](https://github.com/Sakura520222/astrbot_plugin_daily_limit/issues)
-- 💬 源仓库Issues: [GitHub Issues](https://github.com/left666/astrbot_plugin_daily_limit/issues)
+- 💬 Issues: [GitHub Issues](https://github.com/left666/astrbot_plugin_daily_limit/issues)
 
 
 ### 🤝 贡献指南
@@ -280,12 +279,6 @@
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
-## 🙏 致谢
-
-感谢原作者的贡献：
-- 👨‍💻 **原作者**: left666
-- 🔗 **原仓库**: [https://github.com/left666/astrbot_plugin_daily_limit](https://github.com/left666/astrbot_plugin_daily_limit)
 
 ---
 
