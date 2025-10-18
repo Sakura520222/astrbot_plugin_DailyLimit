@@ -1,8 +1,8 @@
-# 🚀 AstrBot 日调用限制插件 v2.3
+# 🚀 AstrBot 日调用限制插件 v2.2
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.3-blue)
+![Version](https://img.shields.io/badge/版本-v2.2-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -14,7 +14,6 @@
 ## ✨ 特性亮点
 
 - 🛡️ **智能限制** - 基于每日调用次数的智能限制机制
-- 🕐 **时间段限制** - 支持按时间段设置不同的调用限制
 - 👥 **多级权限** - 支持用户、群组、豁免用户三级权限管理
 - 🤝 **群组共享** - 群组成员共享使用次数，提升群组协作体验
 - 👤 **群组独立** - 群组内成员独立使用次数，支持个性化配置
@@ -49,17 +48,6 @@
 
 这种设计既保证了群组协作的便利性，又保持了个人使用的独立性，同时提供了更灵活的使用模式选择。
 
-#### 🕐 时间段限制功能
-
-**v2.3 新增功能**：支持按时间段设置不同的调用限制，实现更精细化的使用控制！
-
-- **智能时间判断** - 自动判断当前时间适用的时间段限制
-- **周末识别** - 支持周末特殊时间段配置，可设置不同的限制策略
-- **跨天时间段** - 支持跨天时间段配置（如夜间22:00-06:00）
-- **优先级控制** - 时间段限制优先级高于用户和群组特定限制
-- **状态监控** - 实时显示当前生效的时间段限制状态
-- **使用统计** - 提供时间段使用统计和分析功能
-
 #### 📊 使用记录功能
 
 **v2.1 新增功能**：详细记录每次调用，支持历史查询和多维度分析！
@@ -79,13 +67,6 @@
 - **使用分布**：低、中、高使用频次的用户分布统计
 
 ### 🔄 版本更新
-
-**v2.3 主要更新：**
-- ✅ **时间段限制功能** - 支持按时间段设置不同的调用限制
-- ✅ **智能时间判断** - 自动判断当前时间适用的时间段限制
-- ✅ **周末识别** - 支持周末特殊时间段配置
-- ✅ **时间段统计** - 新增时间段使用统计和分析功能
-- ✅ **配置结构扩展** - 新增time_period_limits配置字段
 
 **v2.2 主要更新：**
 - ✅ **群组独立模式** - 支持群组内成员独立使用次数功能
@@ -156,8 +137,7 @@
     "exempt_users": [],
     "group_limits": [],
     "user_limits": [],
-    "group_mode_settings": [],
-    "time_period_limits": []
+    "group_mode_settings": []
 }
 ```
 
@@ -203,69 +183,13 @@
 - 如果群组没有配置模式，默认使用共享模式
 - 可以为不同群组设置不同的使用模式
 
-#### 时间段限制配置
-```json
-{
-    "name": "工作时间",
-    "start_time": "09:00",
-    "end_time": "18:00",
-    "limit": 10,
-    "enabled": true
-}
-```
-
-**配置说明：**
-- `name`：时间段名称（用于识别和显示）
-- `start_time`：开始时间（HH:MM格式，24小时制）
-- `end_time`：结束时间（HH:MM格式，24小时制）
-- `limit`：该时间段内的限制次数
-- `enabled`：是否启用该时间段限制
-
-**特殊时间段处理：**
-- **跨天时间段**：支持跨天时间段配置（如22:00-06:00）
-- **周末识别**：时间段名称包含"周末"时，仅在周末生效
-- **工作日识别**：时间段名称包含"工作日"时，仅在工作日生效
-
-**示例配置：**
-```json
-"time_period_limits": [
-    {
-        "name": "工作时间",
-        "start_time": "09:00",
-        "end_time": "18:00",
-        "limit": 10,
-        "enabled": true
-    },
-    {
-        "name": "夜间时段",
-        "start_time": "22:00",
-        "end_time": "06:00",
-        "limit": 3,
-        "enabled": true
-    },
-    {
-        "name": "周末全天",
-        "start_time": "00:00",
-        "end_time": "23:59",
-        "limit": 15,
-        "enabled": true
-    }
-]
-```
-
 ### 🔄 优先级规则
 
 用户调用限制按以下优先级生效：
 1. 🏆 **豁免用户** - 完全不受限制
-2. 🕐 **时间段限制** - 当前时间段内的限制（如果配置且生效）
-3. 👤 **用户特定限制** - 针对单个用户的设置
-4. 👥 **群组特定限制** - 针对整个群组的设置
-5. ⚙️ **默认限制** - 全局默认设置
-
-**时间段限制说明：**
-- 时间段限制仅在配置且当前时间处于该时间段内时生效
-- 如果多个时间段重叠，按配置顺序第一个匹配的时间段生效
-- 时间段限制优先级高于用户和群组特定限制，但低于豁免用户
+2. 👤 **用户特定限制** - 针对单个用户的设置
+3. 👥 **群组特定限制** - 针对整个群组的设置
+4. ⚙️ **默认限制** - 全局默认设置
 
 ## 💡 使用
 
@@ -303,8 +227,6 @@
 | `/limit analytics [日期]` | 多维度分析 | `/limit analytics 2025-01-23` |
 | `/limit top [数量]` | 显示排行榜 | `/limit top 5` |
 | `/limit status` | 查看插件状态 | `/limit status` |
-| `/limit period` | 显示时间段限制状态 | `/limit period` |
-| `/limit period_stats [天数]` | 时间段使用统计 | `/limit period_stats 7` |
 
 #### 🔄 重置功能
 | 命令 | 功能 | 示例 |
@@ -314,14 +236,6 @@
 | `/limit reset group <群组ID>` | 重置特定群组 | `/limit reset group 789012` |
 
 ## 🔄 更新日志
-
-### v2.3 (2025-10-18)
-- ✅ **时间段限制功能** - 支持按时间段设置不同的调用限制
-- ✅ **智能时间判断** - 自动判断当前时间适用的时间段限制
-- ✅ **周末识别** - 支持周末特殊时间段配置
-- ✅ **时间段统计** - 新增时间段使用统计和分析功能
-- ✅ **配置结构扩展** - 新增time_period_limits配置字段
-- ✅ **管理命令增强** - 新增/limit period和/limit period_stats命令
 
 ### v2.2 (2025-10-17)
 - ✅ **群组独立模式** - 支持群组内成员独立使用次数功能
@@ -356,7 +270,7 @@
 ### 🐛 问题反馈
 如遇到任何问题，请通过以下方式联系：
 - 📧 Telegram: [@TamakiSakura520](https://t.me/TamakiSakura520)
-- 💬 Issues: [GitHub Issues](https://github.com/Sakura520222/astrbot_plugin_daily_limit/issues)
+- 💬 Issues: [GitHub Issues](https://github.com/Sakura520222/astrbot_plugin_DailyLimit/issues)
 
 
 ### 🤝 贡献指南
@@ -367,11 +281,10 @@
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
 ## 🙏 致谢
-
 感谢原作者的贡献：
-- 👨‍💻 **原作者**: left666
-- 🔗 **原仓库**: [https://github.com/left666/astrbot_plugin_daily_limit](https://github.com/left666/astrbot_plugin_daily_limit)
 
+### 👨‍💻 原作者: left666
+### 🔗 原仓库: https://github.com/left666/astrbot_plugin_daily_limit
 ---
 
 <div align="center">

@@ -96,38 +96,6 @@
                         }
                     }
                 }
-            },
-            "time_period_limits": {
-                "description": "时间段限制配置",
-                "type": "list",
-                "default": [],
-                "hint": "格式为：{\"name\": 时间段名称, \"start_time\": \"HH:MM\", \"end_time\": \"HH:MM\", \"limit\": 限制次数, \"enabled\": true/false}",
-                "items": {
-                    "type": "object",
-                    "items": {
-                        "name": {
-                            "description": "时间段名称",
-                            "type": "string"
-                        },
-                        "start_time": {
-                            "description": "开始时间（HH:MM格式）",
-                            "type": "string"
-                        },
-                        "end_time": {
-                            "description": "结束时间（HH:MM格式）",
-                            "type": "string"
-                        },
-                        "limit": {
-                            "description": "该时间段内的限制次数",
-                            "type": "int"
-                        },
-                        "enabled": {
-                            "description": "是否启用该时间段限制",
-                            "type": "bool",
-                            "default": true
-                        }
-                    }
-                }
             }
         }
     }
