@@ -379,6 +379,6 @@
 
 **🌟 如果这个插件对你有帮助，请给个Star支持一下！**
 
-[![Star](https://img.shields.io/github/stars/Sakura520222/astrbot_plugin_daily_limit?style=social)](https://github.com/Sakura520222/astrbot_plugin_daily_limit)
+[![Star](https://img.shields.io/github/stars/Sakura520222/astrbot_plugin_DailyLimit?style=social)](https://github.com/Sakura520222/astrbot_plugin_DailyLimit)
 
 </div>
