@@ -18,7 +18,7 @@ from astrbot.api import logger
     name="DailyLimit",
     desc="限制用户调用大模型的次数",
     author="Sakura520222",
-    version="v2.4",
+    version="v2.3",
     repo="https://github.com/Sakura520222/astrbot_plugin_DailyLimit"
 )
 class DailyLimitPlugin(star.Star):
@@ -43,28 +43,28 @@ class DailyLimitPlugin(star.Star):
     def _load_limits_from_config(self):
         """从配置文件加载群组和用户特定限制"""
         # 加载群组特定限制
-        for group_limit in self.config["group_settings"]["limits"]:
+        for group_limit in self.config["limits"]["group_limits"]:
             group_id = group_limit.get("group_id")
             limit = group_limit.get("limit")
             if group_id and limit is not None:
                 self.group_limits[str(group_id)] = limit
 
         # 加载用户特定限制
-        for user_limit in self.config["user_settings"]["limits"]:
+        for user_limit in self.config["limits"]["user_limits"]:
             user_id = user_limit.get("user_id")
             limit = user_limit.get("limit")
             if user_id and limit is not None:
                 self.user_limits[str(user_id)] = limit
 
         # 加载群组模式配置
-        for group_mode in self.config["group_settings"]["mode_settings"]:
+        for group_mode in self.config["limits"]["group_mode_settings"]:
             group_id = group_mode.get("group_id")
             mode = group_mode.get("mode")
             if group_id and mode in ["shared", "individual"]:
                 self.group_modes[str(group_id)] = mode
 
         # 加载时间段限制配置
-        time_period_limits = self.config["time_period_settings"].get("limits", [])
+        time_period_limits = self.config["limits"].get("time_period_limits", [])
         for time_limit in time_period_limits:
             start_time = time_limit.get("start_time")
             end_time = time_limit.get("end_time")
@@ -91,7 +91,7 @@ class DailyLimitPlugin(star.Star):
         group_id = str(group_id)
 
         # 检查是否已存在该群组的限制
-        group_limits = self.config["group_settings"]["limits"]
+        group_limits = self.config["limits"]["group_limits"]
         for i, group_limit in enumerate(group_limits):
             if str(group_limit.get("group_id")) == group_id:
                 # 更新现有限制
@@ -108,7 +108,7 @@ class DailyLimitPlugin(star.Star):
         user_id = str(user_id)
 
         # 检查是否已存在该用户的限制
-        user_limits = self.config["user_settings"]["limits"]
+        user_limits = self.config["limits"]["user_limits"]
         for i, user_limit in enumerate(user_limits):
             if str(user_limit.get("user_id")) == user_id:
                 # 更新现有限制
@@ -125,7 +125,7 @@ class DailyLimitPlugin(star.Star):
         group_id = str(group_id)
 
         # 检查是否已存在该群组的模式配置
-        group_modes = self.config["group_settings"]["mode_settings"]
+        group_modes = self.config["limits"]["group_mode_settings"]
         for i, group_mode in enumerate(group_modes):
             if str(group_mode.get("group_id")) == group_id:
                 # 更新现有模式
@@ -283,7 +283,7 @@ class DailyLimitPlugin(star.Star):
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
         # 检查用户是否豁免（优先级最高）
-        if str(user_id) in self.config["global_settings"]["exempt_users"]:
+        if str(user_id) in self.config["limits"]["exempt_users"]:
             return float('inf')  # 无限制
 
         # 检查时间段限制（优先级第二）
@@ -300,7 +300,7 @@ class DailyLimitPlugin(star.Star):
             return self.group_limits[str(group_id)]
 
         # 返回默认限制
-        return self.config["global_settings"]["default_daily_limit"]
+        return self.config["limits"]["default_daily_limit"]
 
     def _get_user_usage(self, user_id, group_id=None):
         """获取用户已使用次数（兼容旧版本）"""
@@ -457,7 +457,7 @@ class DailyLimitPlugin(star.Star):
 
         user_id = event.get_sender_id()
 
-        if str(user_id) in self.config["global_settings"]["exempt_users"]:
+        if str(user_id) in self.config["limits"]["exempt_users"]:
             return True  # 豁免用户，允许继续处理
 
         group_id = None
@@ -781,8 +781,8 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message("用法: /limit exempt <用户ID>"))
             return
 
-        if user_id not in self.config["global_settings"]["exempt_users"]:
-            self.config["global_settings"]["exempt_users"].append(user_id)
+        if user_id not in self.config["limits"]["exempt_users"]:
+            self.config["limits"]["exempt_users"].append(user_id)
             self.config.save_config()
 
             event.set_result(MessageEventResult().message(f"已将用户 {user_id} 添加到豁免列表"))
@@ -798,8 +798,8 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message("用法: /limit unexempt <用户ID>"))
             return
 
-        if user_id in self.config["global_settings"]["exempt_users"]:
-            self.config["global_settings"]["exempt_users"].remove(user_id)
+        if user_id in self.config["limits"]["exempt_users"]:
+            self.config["limits"]["exempt_users"].remove(user_id)
             self.config.save_config()
 
             event.set_result(MessageEventResult().message(f"已将用户 {user_id} 从豁免列表移除"))
@@ -1059,8 +1059,8 @@ class DailyLimitPlugin(star.Star):
             redis_available_status = "✅ 可用" if redis_available else "❌ 不可用"
             
             # 获取配置信息
-            default_limit = self.config["global_settings"]["default_daily_limit"]
-            exempt_users_count = len(self.config["global_settings"]["exempt_users"])
+            default_limit = self.config["limits"]["default_daily_limit"]
+            exempt_users_count = len(self.config["limits"]["exempt_users"])
             group_limits_count = len(self.group_limits)
             user_limits_count = len(self.user_limits)
             
@@ -1445,11 +1445,11 @@ class DailyLimitPlugin(star.Star):
         """保存时间段限制配置到配置文件"""
         try:
             # 确保time_period_limits字段存在
-            if "limits" not in self.config["time_period_settings"]:
-                self.config["time_period_settings"]["limits"] = []
+            if "time_period_limits" not in self.config["limits"]:
+                self.config["limits"]["time_period_limits"] = []
             
             # 更新配置对象
-            self.config["time_period_settings"]["limits"] = self.time_period_limits
+            self.config["limits"]["time_period_limits"] = self.time_period_limits
             # 保存到配置文件
             self.config.save_config()
             logger.info(f"已保存时间段限制配置，共 {len(self.time_period_limits)} 个时间段")
