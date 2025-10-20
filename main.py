@@ -1,24 +1,24 @@
 import json
 import redis
 import datetime
-import astrbot.api.star as star
-from astrbot.api.event import (filter,
+import astrbot.api.star as star  # type: ignore
+from astrbot.api.event import (filter,  # type: ignore
                                AstrMessageEvent,
                                MessageEventResult,
                                MessageChain,
                                EventResultType)
-from astrbot.api.platform import MessageType
-from astrbot.api.event.filter import PermissionType
-from astrbot.api import AstrBotConfig
-from astrbot.api.provider import ProviderRequest
-from astrbot.api import logger
+from astrbot.api.platform import MessageType  # type: ignore
+from astrbot.api.event.filter import PermissionType  # type: ignore
+from astrbot.api import AstrBotConfig  # type: ignore
+from astrbot.api.provider import ProviderRequest  # type: ignore
+from astrbot.api import logger  # type: ignore
 
 
 @star.register(
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666",
-    version="v2.3",
+    version="v2.4",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -33,6 +33,7 @@ class DailyLimitPlugin(star.Star):
         self.group_modes = {}  # 群组模式配置 {"group_id": "shared"或"individual"}
         self.time_period_limits = []  # 时间段限制配置
         self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
+        self.skip_patterns = []  # 跳过处理的模式列表
 
         # 加载群组和用户特定限制
         self._load_limits_from_config()
@@ -84,7 +85,10 @@ class DailyLimitPlugin(star.Star):
                 except ValueError:
                     logger.warning(f"时间段限制配置格式错误: {start_time} - {end_time}")
 
-        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置和{len(self.time_period_limits)} 个时间段限制")
+        # 加载跳过模式配置
+        self.skip_patterns = self.config["limits"].get("skip_patterns", ["@所有人", "#"])
+        
+        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个跳过模式")
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件"""
@@ -187,6 +191,18 @@ class DailyLimitPlugin(star.Star):
             date_str = datetime.datetime.now().strftime("%Y-%m-%d")
         
         return f"astrbot:usage_stats:{date_str}"
+
+    def _should_skip_message(self, message_str):
+        """检查消息是否应该跳过处理"""
+        if not message_str or not self.skip_patterns:
+            return False
+        
+        # 检查消息是否以任何跳过模式开头
+        for pattern in self.skip_patterns:
+            if message_str.startswith(pattern):
+                return True
+        
+        return False
 
     def _get_group_mode(self, group_id):
         """获取群组的模式配置"""
@@ -467,11 +483,14 @@ class DailyLimitPlugin(star.Star):
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
         """处理LLM请求事件"""
+        # 检查Redis连接状态，如果未连接则阻止处理
         if not self.redis:
             logger.error("Redis未连接，阻止处理LLM请求")
             event.stop_event()
             return False
-        if not req.prompt.strip() or event.message_str.startswith("@所有人"):
+        
+        # 检查请求是否有效：空提示或匹配跳过模式的消息不处理
+        if not req.prompt.strip() or self._should_skip_message(event.message_str):
             event.stop_event()
             return False
 
@@ -626,35 +645,67 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "📋 日调用限制插件 - 指令帮助\n\n"
-            "👤 用户指令：\n"
-            "• /limit_status - 查看当前使用状态\n"
-            "• /限制帮助 - 显示本帮助信息\n\n"
-            "👨‍💼 管理员指令：\n"
-            "• /limit help - 显示详细帮助信息\n"
-            "• /limit set <用户ID> <次数> - 设置特定用户的限制\n"
-            "• /limit setgroup <次数> - 设置当前群组的限制\n"
-            "• /limit setmode <shared|individual> - 设置群组使用模式（共享/独立）\n"
-            "• /limit getmode - 查看当前群组使用模式\n"
-            "• /limit exempt <用户ID> - 将用户添加到豁免列表\n"
-            "• /limit unexempt <用户ID> - 将用户从豁免列表移除\n"
-            "• /limit list_user - 列出所有用户特定限制\n"
-            "• /limit list_group - 列出所有群组特定限制\n"
-            "• /limit stats - 查看插件使用统计信息\n"
-            "• /limit history [用户ID] [天数] - 查询使用历史记录\n"
-            "• /limit analytics [日期] - 多维度统计分析\n"
-            "• /limit top [数量] - 查看使用次数排行榜\n"
-            "• /limit status - 检查插件状态和健康状态\n"
-            "• /limit reset <用户ID|all> - 重置用户使用次数\n\n"
-            "💡 说明：\n"
-            "- 默认限制：所有用户每日调用次数\n"
-            "- 群组限制：可针对特定群组设置不同限制\n"
-            "- 用户限制：可针对特定用户设置不同限制\n"
-            "- 豁免用户：不受限制的用户列表\n"
-            "- 群组模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
-            "- 剩余次数提醒：当剩余1、3、5次时会自动提醒\n"
-            "- 使用记录：自动记录每次调用，支持历史查询\n"
-            "- 统计分析：提供多维度使用数据分析"
+            "🚀 日调用限制插件 v2.4.1 - 完整指令帮助\n"
+            "══════════════════════════════════════\n\n"
+            "👤 用户指令（所有人可用）：\n"
+            "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
+            "└── /限制帮助 - 显示本帮助信息\n\n"
+            "👨‍💼 管理员指令（仅管理员可用）：\n"
+            "├── /limit help - 显示详细管理员帮助信息\n"
+            "├── /limit set <用户ID> <次数> - 设置特定用户的每日限制次数\n"
+            "├── /limit setgroup <次数> - 设置当前群组的每日限制次数\n"
+            "├── /limit setmode <shared|individual> - 设置群组使用模式（共享/独立）\n"
+            "├── /limit getmode - 查看当前群组使用模式\n"
+            "├── /limit exempt <用户ID> - 将用户添加到豁免列表（不受限制）\n"
+            "├── /limit unexempt <用户ID> - 将用户从豁免列表移除\n"
+            "├── /limit list_user - 列出所有用户特定限制\n"
+            "├── /limit list_group - 列出所有群组特定限制\n"
+            "├── /limit stats - 查看今日使用统计信息\n"
+            "├── /limit history [用户ID] [天数] - 查询使用历史记录\n"
+            "├── /limit analytics [日期] - 多维度统计分析\n"
+            "├── /limit top [数量] - 查看使用次数排行榜\n"
+            "├── /limit status - 检查插件状态和健康状态\n"
+            "├── /limit reset <用户ID|all> - 重置用户使用次数\n"
+            "└── /limit skip_patterns - 管理跳过处理的模式配置\n\n"
+            "⏰ 时间段限制命令：\n"
+            "├── /limit timeperiod list - 列出所有时间段限制配置\n"
+            "├── /limit timeperiod add <开始时间> <结束时间> <次数> - 添加时间段限制\n"
+            "├── /limit timeperiod remove <索引> - 删除时间段限制\n"
+            "├── /limit timeperiod enable <索引> - 启用时间段限制\n"
+            "└── /limit timeperiod disable <索引> - 禁用时间段限制\n\n"
+            "🔧 跳过模式管理命令：\n"
+            "├── /limit skip_patterns list - 查看当前跳过模式\n"
+            "├── /limit skip_patterns add <模式> - 添加跳过模式\n"
+            "├── /limit skip_patterns remove <模式> - 移除跳过模式\n"
+            "└── /limit skip_patterns reset - 重置为默认模式\n\n"
+            "💡 核心功能特性：\n"
+            "✅ 智能限制系统：多级权限管理，支持用户、群组、豁免用户三级体系\n"
+            "✅ 时间段限制：支持按时间段设置不同的调用限制（优先级最高）\n"
+            "✅ 群组协作模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
+            "✅ 数据监控分析：实时监控、使用统计、排行榜和状态监控\n"
+            "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
+            "✅ 自定义跳过模式：可配置需要跳过处理的消息前缀\n\n"
+            "🎯 优先级规则（从高到低）：\n"
+            "1️⃣ ⏰ 时间段限制 - 优先级最高（特定时间段内的限制）\n"
+            "2️⃣ 🏆 豁免用户 - 完全不受限制（白名单用户）\n"
+            "3️⃣ 👤 用户特定限制 - 针对单个用户的个性化设置\n"
+            "4️⃣ 👥 群组特定限制 - 针对整个群组的统一设置\n"
+            "5️⃣ ⚙️ 默认限制 - 全局默认设置（兜底规则）\n\n"
+            "📊 使用模式说明：\n"
+            "• 🔄 共享模式：群组内所有成员共享使用次数（默认模式）\n"
+            "   └── 适合小型团队协作，统一管理使用次数\n"
+            "• 👤 独立模式：群组内每个成员有独立的使用次数\n"
+            "   └── 适合大型团队，成员间互不影响\n\n"
+            "🔔 智能提醒：\n"
+            "• 📢 剩余次数提醒：当剩余1、3、5次时会自动提醒\n"
+            "• 📊 使用状态监控：实时监控使用情况，防止滥用\n\n"
+            "📝 使用提示：\n"
+            "• 普通用户可使用 /limit_status 查看自己的使用状态\n"
+            "• 管理员可使用 /limit help 查看详细管理命令\n"
+            "• 时间段限制优先级最高，会覆盖其他限制规则\n"
+            "• 默认跳过模式：@所有人、#（可自定义添加）\n\n"
+            "📝 版本信息：v2.4.1 | 作者：left666 | 改进：Sakura520222\n"
+            "══════════════════════════════════════"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -665,43 +716,147 @@ class DailyLimitPlugin(star.Star):
         pass
 
     @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("skip_patterns")
+    async def limit_skip_patterns(self, event: AstrMessageEvent):
+        """管理跳过模式配置（仅管理员）"""
+        args = event.message_str.strip().split()
+        
+        # 检查命令格式：/limit skip_patterns [action] [pattern]
+        if len(args) < 3:
+            # 显示当前跳过模式和帮助信息
+            patterns_str = ", ".join([f'"{pattern}"' for pattern in self.skip_patterns])
+            event.set_result(MessageEventResult().message(
+                f"当前跳过模式：{patterns_str}\n"
+                f"使用方式：/limit skip_patterns list - 查看当前模式\n"
+                f"使用方式：/limit skip_patterns add <模式> - 添加跳过模式\n"
+                f"使用方式：/limit skip_patterns remove <模式> - 移除跳过模式\n"
+                f"使用方式：/limit skip_patterns reset - 重置为默认模式"
+            ))
+            return
+        
+        action = args[2]
+        
+        if action == "list":
+            # 显示当前跳过模式
+            patterns_str = ", ".join([f'"{pattern}"' for pattern in self.skip_patterns])
+            event.set_result(MessageEventResult().message(f"当前跳过模式：{patterns_str}"))
+            
+        elif action == "add" and len(args) > 3:
+            # 添加跳过模式
+            pattern = args[3]
+            if pattern in self.skip_patterns:
+                event.set_result(MessageEventResult().message(f"跳过模式 '{pattern}' 已存在"))
+            else:
+                self.skip_patterns.append(pattern)
+                # 保存到配置文件
+                self.config["limits"]["skip_patterns"] = self.skip_patterns
+                self.config.save_config()
+                event.set_result(MessageEventResult().message(f"已添加跳过模式：'{pattern}'"))
+                
+        elif action == "remove" and len(args) > 3:
+            # 移除跳过模式
+            pattern = args[3]
+            if pattern in self.skip_patterns:
+                self.skip_patterns.remove(pattern)
+                # 保存到配置文件
+                self.config["limits"]["skip_patterns"] = self.skip_patterns
+                self.config.save_config()
+                event.set_result(MessageEventResult().message(f"已移除跳过模式：'{pattern}'"))
+            else:
+                event.set_result(MessageEventResult().message(f"跳过模式 '{pattern}' 不存在"))
+                
+        elif action == "reset":
+            # 重置为默认模式
+            self.skip_patterns = ["@所有人", "#"]
+            # 保存到配置文件
+            self.config["limits"]["skip_patterns"] = self.skip_patterns
+            self.config.save_config()
+            event.set_result(MessageEventResult().message("已重置跳过模式为默认值：'@所有人', '#'"))
+            
+        else:
+            event.set_result(MessageEventResult().message("无效的命令格式，请使用 /limit skip_patterns 查看帮助"))
+
+    @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("help")
     async def limit_help(self, event: AstrMessageEvent):
-        """显示帮助信息（仅管理员）"""
+        """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "日调用限制插件使用说明：\n"
-            "- /limit_status：用户查看当前使用状态\n"
-            "\n管理员命令：\n"
-            "- /limit help：显示此帮助信息\n"
-            "- /limit set <用户ID> <次数>：设置特定用户的限制\n"
-            "- /limit setgroup <次数>：设置当前群组的限制\n"
-            "- /limit setmode <shared|individual>：设置当前群组使用模式（共享/独立）\n"
-            "- /limit getmode：查看当前群组使用模式\n"
-            "- /limit exempt <用户ID>：将用户添加到豁免列表\n"
-            "- /limit unexempt <用户ID>：将用户从豁免列表移除\n"
-            "- /limit list_user：列出所有用户特定限制\n"
-            "- /limit list_group：列出所有群组特定限制\n"
-            "- /limit stats：查看插件使用统计信息\n"
-            "- /limit history [用户ID] [天数]：查询使用历史记录\n"
-            "- /limit analytics [日期]：多维度统计分析\n"
-            "- /limit top [数量]：查看使用次数排行榜\n"
-            "- /limit status：检查插件状态和健康状态\n"
-            "- /limit reset <用户ID|all>：重置使用次数\n"
-            "\n时间段限制命令：\n"
-            "- /limit timeperiod list：列出所有时间段限制配置\n"
-            "- /limit timeperiod add <开始时间> <结束时间> <限制次数>：添加时间段限制\n"
-            "- /limit timeperiod remove <索引>：删除时间段限制\n"
-            "- /limit timeperiod enable <索引>：启用时间段限制\n"
-            "- /limit timeperiod disable <索引>：禁用时间段限制\n"
-            "\n使用模式说明：\n"
-            "- 共享模式：群组内所有成员共享使用次数\n"
-            "- 独立模式：群组内每个成员有独立的使用次数\n"
-            "\n优先级规则：\n"
-            "1. 豁免用户（无限制）\n"
-            "2. 时间段限制（优先级最高）\n"
-            "3. 用户特定限制\n"
-            "4. 群组特定限制\n"
-            "5. 默认限制\n"
+            "🚀 日调用限制插件 v2.4.1 - 管理员详细帮助\n"
+            "══════════════════════════════════════\n\n"
+            "📋 基础管理命令：\n"
+            "├── /limit help - 显示此帮助信息\n"
+            "├── /limit set <用户ID> <次数> - 设置特定用户的每日限制次数\n"
+            "│   示例：/limit set 123456 50 - 设置用户123456的每日限制为50次\n"
+            "├── /limit setgroup <次数> - 设置当前群组的每日限制次数\n"
+            "│   示例：/limit setgroup 30 - 设置当前群组的每日限制为30次\n"
+            "├── /limit setmode <shared|individual> - 设置当前群组使用模式\n"
+            "│   示例：/limit setmode shared - 设置为共享模式\n"
+            "├── /limit getmode - 查看当前群组使用模式\n"
+            "├── /limit exempt <用户ID> - 将用户添加到豁免列表（不受限制）\n"
+            "│   示例：/limit exempt 123456 - 豁免用户123456\n"
+            "├── /limit unexempt <用户ID> - 将用户从豁免列表移除\n"
+            "│   示例：/limit unexempt 123456 - 取消用户123456的豁免\n"
+            "├── /limit list_user - 列出所有用户特定限制\n"
+            "└── /limit list_group - 列出所有群组特定限制\n"
+            "\n⏰ 时间段限制命令：\n"
+            "├── /limit timeperiod list - 列出所有时间段限制配置\n"
+            "├── /limit timeperiod add <开始时间> <结束时间> <限制次数> - 添加时间段限制\n"
+            "│   示例：/limit timeperiod add 09:00 18:00 10 - 添加9:00-18:00时间段限制10次\n"
+            "├── /limit timeperiod remove <索引> - 删除时间段限制\n"
+            "│   示例：/limit timeperiod remove 1 - 删除第1个时间段限制\n"
+            "├── /limit timeperiod enable <索引> - 启用时间段限制\n"
+            "│   示例：/limit timeperiod enable 1 - 启用第1个时间段限制\n"
+            "└── /limit timeperiod disable <索引> - 禁用时间段限制\n"
+            "    示例：/limit timeperiod disable 1 - 禁用第1个时间段限制\n"
+            "\n🔧 跳过模式管理命令：\n"
+            "├── /limit skip_patterns list - 查看当前跳过模式\n"
+            "├── /limit skip_patterns add <模式> - 添加跳过模式\n"
+            "│   示例：/limit skip_patterns add ! - 添加!为跳过模式\n"
+            "├── /limit skip_patterns remove <模式> - 移除跳过模式\n"
+            "│   示例：/limit skip_patterns remove # - 移除#跳过模式\n"
+            "└── /limit skip_patterns reset - 重置为默认模式\n"
+            "    示例：/limit skip_patterns reset - 重置为默认模式[@所有人, #]\n"
+            "\n📊 查询统计命令：\n"
+            "├── /limit stats - 查看今日使用统计信息\n"
+            "├── /limit history [用户ID] [天数] - 查询使用历史记录\n"
+            "│   示例：/limit history 123456 7 - 查询用户123456最近7天的使用记录\n"
+            "├── /limit analytics [日期] - 多维度统计分析\n"
+            "│   示例：/limit analytics 2025-01-23 - 分析2025年1月23日的使用数据\n"
+            "├── /limit top [数量] - 查看使用次数排行榜\n"
+            "│   示例：/limit top 10 - 查看今日使用次数前10名\n"
+            "└── /limit status - 检查插件状态和健康状态\n"
+            "\n🔄 重置命令：\n"
+            "├── /limit reset all - 重置所有使用记录（包括个人和群组）\n"
+            "├── /limit reset <用户ID> - 重置特定用户的使用次数\n"
+            "│   示例：/limit reset 123456 - 重置用户123456的使用次数\n"
+            "└── /limit reset group <群组ID> - 重置特定群组的使用次数\n"
+            "    示例：/limit reset group 789012 - 重置群组789012的使用次数\n"
+            "\n🎯 优先级规则（从高到低）：\n"
+            "1️⃣ ⏰ 时间段限制 - 优先级最高（特定时间段内的限制）\n"
+            "2️⃣ 🏆 豁免用户 - 完全不受限制（白名单用户）\n"
+            "3️⃣ 👤 用户特定限制 - 针对单个用户的个性化设置\n"
+            "4️⃣ 👥 群组特定限制 - 针对整个群组的统一设置\n"
+            "5️⃣ ⚙️ 默认限制 - 全局默认设置（兜底规则）\n"
+            "\n📊 使用模式说明：\n"
+            "• 🔄 共享模式：群组内所有成员共享使用次数（默认模式）\n"
+            "   └── 适合小型团队协作，统一管理使用次数\n"
+            "• 👤 独立模式：群组内每个成员有独立的使用次数\n"
+            "   └── 适合大型团队，成员间互不影响\n"
+            "\n💡 功能特性：\n"
+            "✅ 智能限制系统：多级权限管理，支持用户、群组、豁免用户三级体系\n"
+            "✅ 时间段限制：支持按时间段设置不同的调用限制（优先级最高）\n"
+            "✅ 群组协作模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
+            "✅ 数据监控分析：实时监控、使用统计、排行榜和状态监控\n"
+            "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
+            "✅ 自定义跳过模式：可配置需要跳过处理的消息前缀\n"
+            "✅ 智能提醒：剩余次数提醒和使用状态监控\n"
+            "\n📝 使用提示：\n"
+            "• 所有命令都需要管理员权限才能使用\n"
+            "• 时间段限制优先级最高，会覆盖其他限制规则\n"
+            "• 豁免用户不受任何限制规则约束\n"
+            "• 默认跳过模式：@所有人、#（可自定义添加）\n"
+            "\n📝 版本信息：v2.4 | 作者：left666 | 改进：Sakura520222\n"
+            "══════════════════════════════════════"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
