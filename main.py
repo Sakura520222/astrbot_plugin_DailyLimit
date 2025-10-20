@@ -15,11 +15,11 @@ from astrbot.api import logger
 
 
 @star.register(
-    name="DailyLimit",
-    desc="限制用户调用大模型的次数",
-    author="Sakura520222",
+    name="daily_limit",
+    desc="限制用户每日调用大模型的次数",
+    author="left666",
     version="v2.3",
-    repo="https://github.com/Sakura520222/astrbot_plugin_DailyLimit"
+    repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
     """限制群组成员每日调用大模型的次数"""
