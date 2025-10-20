@@ -1,17 +1,17 @@
 import json
 import redis
 import datetime
-import astrbot.api.star as star
-from astrbot.api.event import (filter,
+import astrbot.api.star as star  # type: ignore
+from astrbot.api.event import (filter,  # type: ignore
                                AstrMessageEvent,
                                MessageEventResult,
                                MessageChain,
                                EventResultType)
-from astrbot.api.platform import MessageType
-from astrbot.api.event.filter import PermissionType
-from astrbot.api import AstrBotConfig
-from astrbot.api.provider import ProviderRequest
-from astrbot.api import logger
+from astrbot.api.platform import MessageType  # type: ignore
+from astrbot.api.event.filter import PermissionType  # type: ignore
+from astrbot.api import AstrBotConfig  # type: ignore
+from astrbot.api.provider import ProviderRequest  # type: ignore
+from astrbot.api import logger  # type: ignore
 
 
 @star.register(
