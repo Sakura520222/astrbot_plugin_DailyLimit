@@ -18,7 +18,7 @@ from astrbot.api import logger
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666",
-    version="v2.2",
+    version="v2.3",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -31,6 +31,7 @@ class DailyLimitPlugin(star.Star):
         self.group_limits = {}  # 群组特定限制 {"group_id": limit_count}
         self.user_limits = {}  # 用户特定限制 {"user_id": limit_count}
         self.group_modes = {}  # 群组模式配置 {"group_id": "shared"或"individual"}
+        self.time_period_limits = []  # 时间段限制配置
         self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
 
         # 加载群组和用户特定限制
@@ -62,7 +63,28 @@ class DailyLimitPlugin(star.Star):
             if group_id and mode in ["shared", "individual"]:
                 self.group_modes[str(group_id)] = mode
 
-        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制和 {len(self.group_modes)} 个群组模式配置")
+        # 加载时间段限制配置
+        time_period_limits = self.config["limits"].get("time_period_limits", [])
+        for time_limit in time_period_limits:
+            start_time = time_limit.get("start_time")
+            end_time = time_limit.get("end_time")
+            limit = time_limit.get("limit")
+            enabled = time_limit.get("enabled", True)
+            
+            if start_time and end_time and limit is not None and enabled:
+                # 验证时间格式
+                try:
+                    datetime.datetime.strptime(start_time, "%H:%M")
+                    datetime.datetime.strptime(end_time, "%H:%M")
+                    self.time_period_limits.append({
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "limit": limit
+                    })
+                except ValueError:
+                    logger.warning(f"时间段限制配置格式错误: {start_time} - {end_time}")
+
+        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置和{len(self.time_period_limits)} 个时间段限制")
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件"""
@@ -178,11 +200,96 @@ class DailyLimitPlugin(star.Star):
         # 默认使用共享模式（保持向后兼容性）
         return "shared"
 
+    def _is_in_time_period(self, current_time_str, start_time_str, end_time_str):
+        """检查当前时间是否在指定时间段内"""
+        try:
+            current_time = datetime.datetime.strptime(current_time_str, "%H:%M").time()
+            start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
+            end_time = datetime.datetime.strptime(end_time_str, "%H:%M").time()
+            
+            # 处理跨天的时间段（如 22:00 - 06:00）
+            if start_time <= end_time:
+                # 不跨天的时间段
+                return start_time <= current_time <= end_time
+            else:
+                # 跨天的时间段
+                return current_time >= start_time or current_time <= end_time
+        except ValueError:
+            return False
+
+    def _get_current_time_period_limit(self):
+        """获取当前时间段适用的限制"""
+        current_time_str = datetime.datetime.now().strftime("%H:%M")
+        
+        for time_limit in self.time_period_limits:
+            if self._is_in_time_period(current_time_str, time_limit["start_time"], time_limit["end_time"]):
+                return time_limit["limit"]
+        
+        return None  # 没有匹配的时间段限制
+
+    def _get_time_period_usage_key(self, user_id, group_id=None, time_period_id=None):
+        """获取时间段使用次数的Redis键"""
+        if time_period_id is None:
+            # 如果没有指定时间段ID，使用当前时间段
+            current_time_str = datetime.datetime.now().strftime("%H:%M")
+            for i, time_limit in enumerate(self.time_period_limits):
+                if self._is_in_time_period(current_time_str, time_limit["start_time"], time_limit["end_time"]):
+                    time_period_id = i
+                    break
+            
+            if time_period_id is None:
+                return None
+        
+        if group_id is None:
+            group_id = "private_chat"
+        
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        return f"astrbot:time_period_limit:{date_str}:{time_period_id}:{group_id}:{user_id}"
+
+    def _get_time_period_usage(self, user_id, group_id=None):
+        """获取用户在时间段内的使用次数"""
+        if not self.redis:
+            return 0
+        
+        key = self._get_time_period_usage_key(user_id, group_id)
+        if key is None:
+            return 0
+        
+        usage = self.redis.get(key)
+        return int(usage) if usage else 0
+
+    def _increment_time_period_usage(self, user_id, group_id=None):
+        """增加用户在时间段内的使用次数"""
+        if not self.redis:
+            return False
+        
+        key = self._get_time_period_usage_key(user_id, group_id)
+        if key is None:
+            return False
+        
+        # 增加计数并设置过期时间
+        pipe = self.redis.pipeline()
+        pipe.incr(key)
+        
+        # 设置过期时间到明天凌晨
+        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        pipe.expire(key, seconds_until_tomorrow)
+        
+        pipe.execute()
+        return True
+
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
-        # 检查用户是否豁免
+        # 检查用户是否豁免（优先级最高）
         if str(user_id) in self.config["limits"]["exempt_users"]:
             return float('inf')  # 无限制
+
+        # 检查时间段限制（优先级第二）
+        time_period_limit = self._get_current_time_period_limit()
+        if time_period_limit is not None:
+            return time_period_limit
 
         # 检查用户特定限制
         if str(user_id) in self.user_limits:
@@ -200,6 +307,14 @@ class DailyLimitPlugin(star.Star):
         if not self.redis:
             return 0
 
+        # 检查时间段限制（优先级最高）
+        time_period_limit = self._get_current_time_period_limit()
+        if time_period_limit is not None:
+            # 有时间段限制时，使用时间段内的使用次数
+            time_period_usage = self._get_time_period_usage(user_id, group_id)
+            return time_period_usage
+
+        # 没有时间段限制时，使用日使用次数
         key = self._get_user_key(user_id, group_id)
         usage = self.redis.get(key)
         return int(usage) if usage else 0
@@ -209,6 +324,14 @@ class DailyLimitPlugin(star.Star):
         if not self.redis:
             return 0
 
+        # 检查时间段限制（优先级最高）
+        time_period_limit = self._get_current_time_period_limit()
+        if time_period_limit is not None:
+            # 有时间段限制时，使用时间段内的使用次数
+            time_period_usage = self._get_time_period_usage(None, group_id)
+            return time_period_usage
+
+        # 没有时间段限制时，使用日使用次数
         key = self._get_group_key(group_id)
         usage = self.redis.get(key)
         return int(usage) if usage else 0
@@ -218,6 +341,14 @@ class DailyLimitPlugin(star.Star):
         if not self.redis:
             return False
 
+        # 检查时间段限制（优先级最高）
+        time_period_limit = self._get_current_time_period_limit()
+        if time_period_limit is not None:
+            # 有时间段限制时，增加时间段使用次数
+            if self._increment_time_period_usage(user_id, group_id):
+                return True
+
+        # 没有时间段限制时，增加日使用次数
         key = self._get_user_key(user_id, group_id)
         # 增加计数并设置过期时间
         pipe = self.redis.pipeline()
@@ -237,6 +368,14 @@ class DailyLimitPlugin(star.Star):
         if not self.redis:
             return False
 
+        # 检查时间段限制（优先级最高）
+        time_period_limit = self._get_current_time_period_limit()
+        if time_period_limit is not None:
+            # 有时间段限制时，增加时间段使用次数
+            if self._increment_time_period_usage(None, group_id):
+                return True
+
+        # 没有时间段限制时，增加日使用次数
         key = self._get_group_key(group_id)
         # 增加计数并设置过期时间
         pipe = self.redis.pipeline()
@@ -294,6 +433,13 @@ class DailyLimitPlugin(star.Star):
         user_stats_key = f"{stats_key}:user:{user_id}"
         self.redis.hincrby(user_stats_key, "total_usage", 1)
         
+        # 更新全局统计
+        global_stats_key = f"{stats_key}:global"
+        self.redis.hincrby(global_stats_key, "total_requests", 1)
+        
+        # 需要设置过期时间的键列表
+        keys_to_expire = [user_stats_key, global_stats_key]
+        
         # 更新群组统计（如果有群组）
         if group_id:
             group_stats_key = f"{stats_key}:group:{group_id}"
@@ -302,10 +448,9 @@ class DailyLimitPlugin(star.Star):
             # 更新群组用户统计
             group_user_stats_key = f"{stats_key}:group:{group_id}:user:{user_id}"
             self.redis.hincrby(group_user_stats_key, "usage_count", 1)
-        
-        # 更新全局统计
-        global_stats_key = f"{stats_key}:global"
-        self.redis.hincrby(global_stats_key, "total_requests", 1)
+            
+            # 添加群组相关的键到过期列表
+            keys_to_expire.extend([group_stats_key, group_user_stats_key])
         
         # 设置过期时间到明天凌晨
         tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
@@ -313,7 +458,7 @@ class DailyLimitPlugin(star.Star):
         seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
         
         # 为所有统计键设置过期时间
-        for key in [user_stats_key, group_stats_key, group_user_stats_key, global_stats_key]:
+        for key in keys_to_expire:
             if self.redis.exists(key):
                 self.redis.expire(key, seconds_until_tomorrow)
         
@@ -542,9 +687,21 @@ class DailyLimitPlugin(star.Star):
             "- /limit top [数量]：查看使用次数排行榜\n"
             "- /limit status：检查插件状态和健康状态\n"
             "- /limit reset <用户ID|all>：重置使用次数\n"
+            "\n时间段限制命令：\n"
+            "- /limit timeperiod list：列出所有时间段限制配置\n"
+            "- /limit timeperiod add <开始时间> <结束时间> <限制次数>：添加时间段限制\n"
+            "- /limit timeperiod remove <索引>：删除时间段限制\n"
+            "- /limit timeperiod enable <索引>：启用时间段限制\n"
+            "- /limit timeperiod disable <索引>：禁用时间段限制\n"
             "\n使用模式说明：\n"
             "- 共享模式：群组内所有成员共享使用次数\n"
             "- 独立模式：群组内每个成员有独立的使用次数\n"
+            "\n优先级规则：\n"
+            "1. 豁免用户（无限制）\n"
+            "2. 时间段限制（优先级最高）\n"
+            "3. 用户特定限制\n"
+            "4. 群组特定限制\n"
+            "5. 默认限制\n"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -1179,3 +1336,142 @@ class DailyLimitPlugin(star.Star):
     async def terminate(self):
         """插件终止时的清理工作"""
         logger.info("日调用限制插件已终止")
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("timeperiod", "list")
+    async def limit_timeperiod_list(self, event: AstrMessageEvent):
+        """列出所有时间段限制配置（仅管理员）"""
+        if not self.time_period_limits:
+            event.set_result(MessageEventResult().message("当前没有设置任何时间段限制"))
+            return
+
+        timeperiod_msg = "⏰ 时间段限制配置列表：\n"
+        for i, period in enumerate(self.time_period_limits, 1):
+            status = "✅ 启用" if period["enabled"] else "❌ 禁用"
+            timeperiod_msg += f"{i}. {period['start_time']} - {period['end_time']}: {period['limit']} 次 ({status})\n"
+
+        event.set_result(MessageEventResult().message(timeperiod_msg))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("timeperiod", "add")
+    async def limit_timeperiod_add(self, event: AstrMessageEvent, start_time: str = None, end_time: str = None, limit: int = None):
+        """添加时间段限制（仅管理员）"""
+        if not all([start_time, end_time, limit]):
+            event.set_result(MessageEventResult().message("用法: /limit timeperiod add <开始时间> <结束时间> <限制次数>"))
+            return
+
+        try:
+            # 验证时间格式
+            datetime.datetime.strptime(start_time, "%H:%M")
+            datetime.datetime.strptime(end_time, "%H:%M")
+            
+            # 验证限制次数
+            limit = int(limit)
+            if limit < 1:
+                event.set_result(MessageEventResult().message("限制次数必须大于0"))
+                return
+
+            # 添加时间段限制
+            new_period = {
+                "start_time": start_time,
+                "end_time": end_time,
+                "limit": limit,
+                "enabled": True
+            }
+            
+            self.time_period_limits.append(new_period)
+            self._save_time_period_limits()
+            
+            event.set_result(MessageEventResult().message(f"✅ 已添加时间段限制: {start_time} - {end_time}: {limit} 次"))
+            
+        except ValueError as e:
+            if "does not match format" in str(e):
+                event.set_result(MessageEventResult().message("时间格式错误，请使用 HH:MM 格式（如 09:00）"))
+            else:
+                event.set_result(MessageEventResult().message("限制次数必须为整数"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("timeperiod", "remove")
+    async def limit_timeperiod_remove(self, event: AstrMessageEvent, index: int = None):
+        """删除时间段限制（仅管理员）"""
+        if index is None:
+            event.set_result(MessageEventResult().message("用法: /limit timeperiod remove <索引>"))
+            return
+
+        try:
+            index = int(index) - 1  # 转换为0-based索引
+            
+            if index < 0 or index >= len(self.time_period_limits):
+                event.set_result(MessageEventResult().message(f"索引无效，请使用 1-{len(self.time_period_limits)} 之间的数字"))
+                return
+
+            removed_period = self.time_period_limits.pop(index)
+            self._save_time_period_limits()
+            
+            event.set_result(MessageEventResult().message(f"✅ 已删除时间段限制: {removed_period['start_time']} - {removed_period['end_time']}"))
+            
+        except ValueError:
+            event.set_result(MessageEventResult().message("索引必须为整数"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("timeperiod", "enable")
+    async def limit_timeperiod_enable(self, event: AstrMessageEvent, index: int = None):
+        """启用时间段限制（仅管理员）"""
+        if index is None:
+            event.set_result(MessageEventResult().message("用法: /limit timeperiod enable <索引>"))
+            return
+
+        try:
+            index = int(index) - 1  # 转换为0-based索引
+            
+            if index < 0 or index >= len(self.time_period_limits):
+                event.set_result(MessageEventResult().message(f"索引无效，请使用 1-{len(self.time_period_limits)} 之间的数字"))
+                return
+
+            self.time_period_limits[index]["enabled"] = True
+            self._save_time_period_limits()
+            
+            period = self.time_period_limits[index]
+            event.set_result(MessageEventResult().message(f"✅ 已启用时间段限制: {period['start_time']} - {period['end_time']}"))
+            
+        except ValueError:
+            event.set_result(MessageEventResult().message("索引必须为整数"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("timeperiod", "disable")
+    async def limit_timeperiod_disable(self, event: AstrMessageEvent, index: int = None):
+        """禁用时间段限制（仅管理员）"""
+        if index is None:
+            event.set_result(MessageEventResult().message("用法: /limit timeperiod disable <索引>"))
+            return
+
+        try:
+            index = int(index) - 1  # 转换为0-based索引
+            
+            if index < 0 or index >= len(self.time_period_limits):
+                event.set_result(MessageEventResult().message(f"索引无效，请使用 1-{len(self.time_period_limits)} 之间的数字"))
+                return
+
+            self.time_period_limits[index]["enabled"] = False
+            self._save_time_period_limits()
+            
+            period = self.time_period_limits[index]
+            event.set_result(MessageEventResult().message(f"✅ 已禁用时间段限制: {period['start_time']} - {period['end_time']}"))
+            
+        except ValueError:
+            event.set_result(MessageEventResult().message("索引必须为整数"))
+
+    def _save_time_period_limits(self):
+        """保存时间段限制配置到配置文件"""
+        try:
+            # 确保time_period_limits字段存在
+            if "time_period_limits" not in self.config["limits"]:
+                self.config["limits"]["time_period_limits"] = []
+            
+            # 更新配置对象
+            self.config["limits"]["time_period_limits"] = self.time_period_limits
+            # 保存到配置文件
+            self.config.save_config()
+            logger.info(f"已保存时间段限制配置，共 {len(self.time_period_limits)} 个时间段")
+        except Exception as e:
+            logger.error(f"保存时间段限制配置失败: {str(e)}")
