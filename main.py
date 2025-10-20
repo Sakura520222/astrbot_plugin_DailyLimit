@@ -467,11 +467,14 @@ class DailyLimitPlugin(star.Star):
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
         """处理LLM请求事件"""
+        # 检查Redis连接状态，如果未连接则阻止处理
         if not self.redis:
             logger.error("Redis未连接，阻止处理LLM请求")
             event.stop_event()
             return False
-        if not req.prompt.strip() or event.message_str.startswith("@所有人"):
+        
+        # 检查请求是否有效：空提示、@所有人消息或#开头的消息不处理
+        if not req.prompt.strip() or event.message_str.startswith("@所有人") or event.message_str.startswith("#"):
             event.stop_event()
             return False
 
