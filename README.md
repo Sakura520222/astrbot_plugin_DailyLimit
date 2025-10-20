@@ -336,7 +336,7 @@
 ### 🐛 问题反馈
 如遇到任何问题，请通过以下方式联系：
 - 📧 Telegram: [@TamakiSakura520](https://t.me/TamakiSakura520)
-- 💬 Issues: [GitHub Issues](https://github.com/Sakura520222/astrbot_plugin_DailyLimit/issues)
+- 💬 Issues: [GitHub Issues](https://github.com/left666/astrbot_plugin_daily_limit/issues)
 
 
 ### 🤝 贡献指南
@@ -373,6 +373,6 @@
 
 **🌟 如果这个插件对你有帮助，请给个Star支持一下！**
 
-[![Star](https://img.shields.io/github/stars/Sakura520222/astrbot_plugin_DailyLimit?style=social)](https://github.com/Sakura520222/astrbot_plugin_DailyLimit)
+[![Star](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=social)](https://github.com/left666/astrbot_plugin_daily_limit)
 
 </div>
