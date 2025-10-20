@@ -261,15 +261,11 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 
 ### 🏆 主要贡献者
 
-<a href="https://github.com/left666">
-  <img src="https://avatars.githubusercontent.com/u/left666" width="80" height="80" alt="left666" style="border-radius: 50%; margin: 10px;"/>
-</a>
+[![left666](https://avatars.githubusercontent.com/u/left666?s=80&v=4)](https://github.com/left666)
 
 ### 🤝 协助者
 
-<a href="https://github.com/TamakiSakura520">
-  <img src="https://avatars.githubusercontent.com/u/TamakiSakura520" width="80" height="80" alt="TamakiSakura520" style="border-radius: 50%; margin: 10px;"/>
-</a>
+[![Sakura520222](https://avatars.githubusercontent.com/u/Sakura520222?s=80&v=4)](https://github.com/Sakura520222)
 
 *感谢所有参与测试、反馈和贡献的社区成员！*
 
