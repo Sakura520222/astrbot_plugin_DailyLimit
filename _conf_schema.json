@@ -124,6 +124,15 @@
                         }
                     }
                 }
+            },
+            "skip_patterns": {
+                "description": "跳过处理的模式配置",
+                "type": "list",
+                "default": ["@所有人", "#"],
+                "hint": "消息以这些模式开头时，将跳过处理（不消耗次数）",
+                "items": {
+                    "type": "string"
+                }
             }
         }
     }
