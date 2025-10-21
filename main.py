@@ -18,7 +18,7 @@ from astrbot.api import logger  # type: ignore
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666",
-    version="v2.4.1",
+    version="v2.4.2",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -590,52 +590,49 @@ class DailyLimitPlugin(star.Star):
         # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
         
-        # 根据群组模式显示正确的状态信息
-        if group_id is not None:
-            group_mode = self._get_group_mode(group_id)
-            if group_mode == "shared":
-                # 共享模式：显示群组共享状态
-                usage = self._get_group_usage(group_id)
-                # 首先检查是否被豁免（无限制）
-                if limit == float('inf'):
-                    # 群组被豁免（无限制）
-                    status_msg = "本群组没有调用次数限制（共享模式）"
-                # 然后检查群组是否设置了特定限制
-                elif str(group_id) in self.group_limits:
-                    # 群组有特定限制
-                    remaining = limit - usage
-                    status_msg = f"本群组今日已使用 {usage}/{limit} 次（共享模式），剩余 {remaining} 次"
-                else:
-                    # 群组使用默认限制
-                    remaining = limit - usage
-                    status_msg = f"本群组今日已使用 {usage}/{limit} 次（默认限制，共享模式），剩余 {remaining} 次"
+        # 首先检查用户是否被豁免（优先级最高）
+        if str(user_id) in self.config["limits"]["exempt_users"]:
+            # 用户被豁免，显示个人豁免状态
+            if group_id is not None:
+                status_msg = "您在本群组没有调用次数限制（豁免用户）"
             else:
-                # 独立模式：显示用户个人状态
-                usage = self._get_user_usage(user_id, group_id)
-                # 首先检查是否被豁免（无限制）
-                if limit == float('inf'):
-                    # 用户被豁免（无限制）
-                    status_msg = "您在本群组没有调用次数限制（独立模式）"
-                # 然后检查用户是否设置了特定限制
-                elif str(user_id) in self.user_limits:
-                    # 用户有特定限制
-                    remaining = limit - usage
-                    status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（独立模式），剩余 {remaining} 次"
-                # 检查群组是否设置了特定限制
-                elif str(group_id) in self.group_limits:
-                    # 群组有特定限制
-                    remaining = limit - usage
-                    status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（群组限制，独立模式），剩余 {remaining} 次"
-                else:
-                    # 使用默认限制
-                    remaining = limit - usage
-                    status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（默认限制，独立模式），剩余 {remaining} 次"
+                status_msg = "您没有调用次数限制（豁免用户）"
         else:
-            # 私聊消息：显示个人状态
-            usage = self._get_user_usage(user_id, group_id)
-            if limit == float('inf'):
-                status_msg = "您没有调用次数限制"
+            # 根据群组模式显示正确的状态信息
+            if group_id is not None:
+                group_mode = self._get_group_mode(group_id)
+                if group_mode == "shared":
+                    # 共享模式：显示群组共享状态
+                    usage = self._get_group_usage(group_id)
+                    # 检查群组是否设置了特定限制
+                    if str(group_id) in self.group_limits:
+                        # 群组有特定限制
+                        remaining = limit - usage
+                        status_msg = f"本群组今日已使用 {usage}/{limit} 次（共享模式），剩余 {remaining} 次"
+                    else:
+                        # 群组使用默认限制
+                        remaining = limit - usage
+                        status_msg = f"本群组今日已使用 {usage}/{limit} 次（默认限制，共享模式），剩余 {remaining} 次"
+                else:
+                    # 独立模式：显示用户个人状态
+                    usage = self._get_user_usage(user_id, group_id)
+                    # 检查用户是否设置了特定限制
+                    if str(user_id) in self.user_limits:
+                        # 用户有特定限制
+                        remaining = limit - usage
+                        status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（独立模式），剩余 {remaining} 次"
+                    # 检查群组是否设置了特定限制
+                    elif str(group_id) in self.group_limits:
+                        # 群组有特定限制
+                        remaining = limit - usage
+                        status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（群组限制，独立模式），剩余 {remaining} 次"
+                    else:
+                        # 使用默认限制
+                        remaining = limit - usage
+                        status_msg = f"您在本群组今日已使用 {usage}/{limit} 次（默认限制，独立模式），剩余 {remaining} 次"
             else:
+                # 私聊消息：显示个人状态
+                usage = self._get_user_usage(user_id, group_id)
                 remaining = limit - usage
                 status_msg = f"您今日已使用 {usage}/{limit} 次，剩余 {remaining} 次"
 
@@ -645,7 +642,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.4.1 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.4.2 - 完整指令帮助\n"
             "══════════════════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -704,7 +701,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认跳过模式：@所有人、#（可自定义添加）\n\n"
-            "📝 版本信息：v2.4.1 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.4.2 | 作者：left666 | 改进：Sakura520222\n"
             "══════════════════════════════════════"
         )
 
@@ -781,7 +778,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "🚀 日调用限制插件 v2.4.1 - 管理员详细帮助\n"
+            "🚀 日调用限制插件 v2.4.2 - 管理员详细帮助\n"
             "══════════════════════════════════════\n\n"
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
@@ -855,7 +852,7 @@ class DailyLimitPlugin(star.Star):
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 豁免用户不受任何限制规则约束\n"
             "• 默认跳过模式：@所有人、#（可自定义添加）\n"
-            "\n📝 版本信息：v2.4 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.4.2 | 作者：left666 | 改进：Sakura520222\n"
             "══════════════════════════════════════"
         )
 
