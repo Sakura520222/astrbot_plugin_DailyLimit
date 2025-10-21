@@ -18,7 +18,7 @@ from astrbot.api import logger  # type: ignore
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666",
-    version="v2.4",
+    version="v2.4.1",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
