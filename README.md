@@ -1,8 +1,8 @@
-# 🚀 AstrBot 日调用限制插件 v2.4.1
+# 🚀 AstrBot 日调用限制插件 v2.4.2
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.4.1-blue)
+![Version](https://img.shields.io/badge/版本-v2.4.2-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -222,6 +222,10 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 
 ## 🔄 版本更新
 
+### v2.4.2 (2025-10-21)
+- ✅ **修复豁免用户状态显示问题** - 修复豁免用户在群组中发送/limit_status指令时返回错误消息的问题
+- ✅ **优化状态显示逻辑** - 确保豁免用户在任何模式下都能正确显示个人豁免状态
+
 ### v2.4 & 2.4.1 (2025-10-20)
 - ✅ **自定义跳过模式功能** - 支持用户自定义需要跳过处理的消息前缀
 - ✅ **动态配置管理** - 支持通过配置文件或管理员命令动态管理跳过模式
@@ -284,10 +288,10 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 
 感谢所有为这个项目做出贡献的开发者！
 
-### 🏆 主要贡献者
+### 🏆 项目作者
 - [left666](https://github.com/left666)
 
-### 🤝 协助者
+### 🤝 主要贡献者
 - [Sakura520222](https://github.com/Sakura520222)
 
 *感谢所有参与测试、反馈和贡献的社区成员！*
