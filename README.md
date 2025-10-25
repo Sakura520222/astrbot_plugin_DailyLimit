@@ -302,3 +302,30 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 - [Sakura520222](https://github.com/Sakura520222)
 
 *感谢所有参与测试、反馈和贡献的社区成员！*
+
+## ⭐ Star 数图
+
+<div align="center">
+
+### 📊 GitHub Stars 统计
+
+![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
+![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
+![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
+
+### 📈 项目活跃度
+
+![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
+![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
+
+</div>
+
+---
+
+<div align="center">
+
+**💫 您的每一个Star都是对我们最大的支持！**
+
+[![Star History Chart](https://api.star-history.com/svg?repos=left666/astrbot_plugin_daily_limit&type=Date)](https://star-history.com/#left666/astrbot_plugin_daily_limit&Date)
+
+</div>
