@@ -1,7 +1,7 @@
-name: DailyLimit
-desc: 限制用户调用大模型的次数
+name: daily_limit
+desc: 限制用户每日调用大模型的次数
 help: 使用 /限制帮助 查看使用说明
-version: v2.3
-author: Sakura520222
-repo: https://github.com/Sakura520222/astrbot_plugin_DailyLimit
+version: v2.4.3
+author: left666 & Sakura520222
+repo: https://github.com/left666/astrbot_plugin_daily_limit
 #由Sakura520222改进并添加新功能
