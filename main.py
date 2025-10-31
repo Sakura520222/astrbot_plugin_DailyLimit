@@ -1,6 +1,9 @@
 import json
 import redis
 import datetime
+import threading
+import sys
+import os
 import astrbot.api.star as star  # type: ignore
 from astrbot.api.event import (filter,  # type: ignore
                                AstrMessageEvent,
@@ -12,6 +15,20 @@ from astrbot.api.event.filter import PermissionType  # type: ignore
 from astrbot.api import AstrBotConfig  # type: ignore
 from astrbot.api.provider import ProviderRequest  # type: ignore
 from astrbot.api import logger  # type: ignore
+
+# Web服务器导入
+try:
+    # 添加当前目录到Python路径
+    import sys
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
+    from web_server import WebServer
+except ImportError as e:
+    WebServer = None
+    logger.warning(f"Web服务器模块导入失败，Web管理界面功能将不可用: {e}")
 
 
 @star.register(
@@ -34,12 +51,17 @@ class DailyLimitPlugin(star.Star):
         self.time_period_limits = []  # 时间段限制配置
         self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
         self.skip_patterns = []  # 跳过处理的模式列表
+        self.web_server = None  # Web服务器实例
+        self.web_server_thread = None  # Web服务器线程
 
         # 加载群组和用户特定限制
         self._load_limits_from_config()
 
         # 初始化Redis连接
         self._init_redis()
+
+        # 初始化Web服务器
+        self._init_web_server()
 
     def _load_limits_from_config(self):
         """从配置文件加载群组和用户特定限制"""
@@ -157,6 +179,40 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             logger.error(f"Redis连接失败: {str(e)}")
             self.redis = None
+
+    def _init_web_server(self):
+        """初始化Web服务器"""
+        if WebServer is None:
+            logger.warning("Web服务器模块不可用，跳过Web服务器初始化")
+            return
+
+        try:
+            # 获取Web服务器配置
+            web_config = self.config.get("web_server", {})
+            host = web_config.get("host", "127.0.0.1")
+            port = web_config.get("port", 8080)
+            debug = web_config.get("debug", False)
+            domain = web_config.get("domain", "")
+
+            # 创建Web服务器实例
+            self.web_server = WebServer(self, host=host, port=port, domain=domain)
+            
+            # 启动Web服务器线程
+            self.web_server_thread = threading.Thread(target=self.web_server.start_async, daemon=True)
+            self.web_server_thread.start()
+            
+            # 根据是否有域名显示不同的访问地址
+            if domain:
+                access_url = self.web_server.get_access_url()
+                logger.info(f"Web管理界面已启动，访问地址: {access_url}")
+            else:
+                logger.info(f"Web管理界面已启动，访问地址: http://{host}:{port}")
+            
+        except Exception as e:
+            logger.error(f"Web服务器初始化失败: {str(e)}")
+            self.web_server = None
+
+
 
     @staticmethod
     def _get_today_key():
@@ -931,7 +987,8 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit analytics 2025-01-23 - 分析2025年1月23日的使用数据\n"
             "├── /limit top [数量] - 查看使用次数排行榜\n"
             "│   示例：/limit top 10 - 查看今日使用次数前10名\n"
-            "└── /limit status - 检查插件状态和健康状态\n"
+            "├── /limit status - 检查插件状态和健康状态\n"
+            "└── /limit domain - 查看Web管理界面域名配置和访问地址\n"
             "\n🔄 重置命令：\n"
             "├── /limit reset all - 重置所有使用记录（包括个人和群组）\n"
             "├── /limit reset <用户ID> - 重置特定用户的使用次数\n"
@@ -1388,6 +1445,43 @@ class DailyLimitPlugin(star.Star):
             await event.send(MessageChain().message("❌ 检查插件状态失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("domain")
+    async def limit_domain(self, event: AstrMessageEvent):
+        """查看配置的域名和访问地址（仅管理员）"""
+        try:
+            # 获取域名配置
+            web_config = self.config.get("web_server", {})
+            domain = web_config.get("domain", "")
+            host = web_config.get("host", "127.0.0.1")
+            port = web_config.get("port", 8080)
+            
+            domain_msg = "🌐 域名配置信息\n"
+            domain_msg += "════════════════════════\n"
+            
+            if domain:
+                domain_msg += f"✅ 已配置自定义域名: {domain}\n"
+                # 获取Web服务器的访问地址
+                if self.web_server:
+                    access_url = self.web_server.get_access_url()
+                    domain_msg += f"🔗 访问地址: {access_url}\n"
+                else:
+                    domain_msg += f"🔗 访问地址: https://{domain}\n"
+            else:
+                domain_msg += "❌ 未配置自定义域名\n"
+                domain_msg += f"🔗 当前访问地址: http://{host}:{port}\n"
+            
+            domain_msg += "\n💡 配置说明:\n"
+            domain_msg += "• 在配置文件的 web_server 部分添加 domain 字段来设置自定义域名\n"
+            domain_msg += "• 例如: \"domain\": \"example.com\"\n"
+            domain_msg += "• 配置域名后，Web管理界面将使用该域名生成访问链接\n"
+            
+            await event.send(MessageChain().message(domain_msg))
+            
+        except Exception as e:
+            logger.error(f"获取域名配置失败: {str(e)}")
+            await event.send(MessageChain().message("❌ 获取域名配置失败，请检查配置文件"))
+
+    @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("top")
     async def limit_top(self, event: AstrMessageEvent, count: int = 10):
         """显示使用次数排行榜"""
@@ -1597,6 +1691,14 @@ class DailyLimitPlugin(star.Star):
 
     async def terminate(self):
         """插件终止时的清理工作"""
+        # 停止Web服务器
+        if self.web_server:
+            try:
+                self.web_server.stop()
+                logger.info("Web服务器已停止")
+            except Exception as e:
+                logger.error(f"停止Web服务器失败: {str(e)}")
+        
         logger.info("日调用限制插件已终止")
 
     @filter.permission_type(PermissionType.ADMIN)
