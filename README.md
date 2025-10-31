@@ -6,11 +6,21 @@
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
+---
+<div align="center">
+
+
+![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
+![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
+![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
+
+![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
+![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
+
+</div>
+
 
 **智能管理AI资源使用，防止滥用，提升用户体验**
-
-[![Star](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=social)](https://github.com/left666/astrbot_plugin_daily_limit)
-
 </div>
 
 ## 📖 简介
@@ -145,7 +155,7 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 
 #### 跳过模式配置 (v2.4新增)
 ```json
-"skip_patterns": ["@所有人", "#"]
+"skip_patterns": ["#", "*"]
 ```
 - **功能**：定义需要跳过处理的消息前缀
 - **默认值**：`["#", "*"]`（保持向后兼容）
@@ -303,22 +313,6 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 
 *感谢所有参与测试、反馈和贡献的社区成员！*
 
-## ⭐ Star 数图
-
-<div align="center">
-
-### 📊 GitHub Stars 统计
-
-![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
-![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
-![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
-
-### 📈 项目活跃度
-
-![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
-![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
-
-</div>
 
 ---
 
