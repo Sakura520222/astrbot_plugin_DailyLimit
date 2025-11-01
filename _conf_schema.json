@@ -126,7 +126,7 @@
                 }
             },
             "skip_patterns": {
-                "description": "跳过处理的模式配置",
+                "description": "忽略处理的模式配置",
                 "type": "list",
                 "default": ["#", "*"],
                 "hint": "消息以这些格式开头时，将忽略它们（不会回复，不消耗次数）",
@@ -159,6 +159,12 @@
                 "description": "自定义域名（用于生成访问链接）",
                 "type": "string",
                 "default": ""
+            },
+            "password": {
+                "description": "Web管理界面访问密码",
+                "type": "string",
+                "default": "limit",
+                "hint": "留空表示无需密码访问"
             }
         }
     }

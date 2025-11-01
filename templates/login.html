@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌸 每日限制插件 - 登录</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #ffb7c5 0%, #ff9eb5 25%, #ff85a1 50%, #ff6b8b 75%, #ff4777 100%);
+            min-height: 100vh;
+            color: #5a3d5c;
+            position: relative;
+            overflow-x: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* 樱花飘落效果 */
+        .sakura {
+            position: absolute;
+            top: -50px;
+            width: 30px;
+            height: 30px;
+            background: radial-gradient(circle, #fff 30%, transparent 70%);
+            border-radius: 50% 0 50% 50%;
+            opacity: 0.7;
+            animation: fall linear infinite;
+            z-index: 0;
+        }
+        
+        @keyframes fall {
+            to {
+                transform: translateY(100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+        
+        .login-container {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 240, 245, 0.95) 100%);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(255, 105, 180, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            width: 100%;
+            max-width: 400px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #ff9eb5, #ff6b8b, #ff4777);
+            border-radius: 20px 20px 0 0;
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .login-header h1 {
+            color: #d63384;
+            font-size: 2rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #d63384, #e83e8c, #fd7e14);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .login-header p {
+            color: #8b5a7c;
+            font-size: 1rem;
+        }
+        
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .form-group label {
+            color: #d63384;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .form-group input {
+            padding: 12px 15px;
+            border: 2px solid rgba(255, 182, 193, 0.5);
+            border-radius: 10px;
+            font-size: 1rem;
+            background: rgba(255, 255, 255, 0.8);
+            transition: all 0.3s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #ff6b8b;
+            box-shadow: 0 0 0 3px rgba(255, 107, 139, 0.1);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        
+        .login-btn {
+            background: linear-gradient(135deg, #ff9eb5, #ff6b8b);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 105, 180, 0.4);
+        }
+        
+        .error-message {
+            background: linear-gradient(135deg, rgba(255, 220, 220, 0.9) 0%, rgba(255, 200, 200, 0.9) 100%);
+            color: #d63384;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #ff6b8b;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-align: center;
+        }
+        
+        .login-footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #8b5a7c;
+            font-size: 0.8rem;
+        }
+        
+        @media (max-width: 480px) {
+            .login-container {
+                margin: 20px;
+                padding: 30px 25px;
+            }
+            
+            .login-header h1 {
+                font-size: 1.7rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 樱花飘落效果容器 -->
+    <div id="sakuraContainer"></div>
+    
+    <div class="login-container">
+        <div class="login-header">
+            <h1>🌸 每日限制插件</h1>
+            <p>请输入密码访问管理界面</p>
+        </div>
+        
+        <form class="login-form" method="POST">
+            {% if error %}
+            <div class="error-message">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <div class="form-group">
+                <label for="password">访问密码</label>
+                <input type="password" id="password" name="password" placeholder="请输入密码" required>
+            </div>
+            
+            <button type="submit" class="login-btn">🌸 登录</button>
+        </form>
+        
+        <div class="login-footer">
+            <p>默认密码：limit</p>
+        </div>
+    </div>
+
+    <script>
+        // 樱花飘落效果
+        function createSakura() {
+            const container = document.getElementById('sakuraContainer');
+            const sakura = document.createElement('div');
+            sakura.className = 'sakura';
+            
+            // 随机位置
+            sakura.style.left = Math.random() * 100 + '%';
+            
+            // 随机大小
+            const size = Math.random() * 20 + 15;
+            sakura.style.width = size + 'px';
+            sakura.style.height = size + 'px';
+            
+            // 随机动画时长
+            const duration = Math.random() * 10 + 15;
+            sakura.style.animationDuration = duration + 's';
+            
+            // 随机透明度
+            sakura.style.opacity = Math.random() * 0.5 + 0.3;
+            
+            container.appendChild(sakura);
+            
+            // 樱花落地后移除
+            setTimeout(() => {
+                sakura.remove();
+            }, duration * 1000);
+        }
+        
+        // 创建多个樱花
+        function createSakuras() {
+            for (let i = 0; i < 15; i++) {
+                setTimeout(() => {
+                    createSakura();
+                }, Math.random() * 5000);
+            }
+        }
+        
+        // 持续创建樱花
+        setInterval(createSakura, 2000);
+        
+        // 初始创建樱花
+        createSakuras();
+        
+        // 自动聚焦密码输入框
+        document.getElementById('password').focus();
+    </script>
+</body>
+</html>

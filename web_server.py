@@ -5,7 +5,7 @@ Web管理界面服务器
 import json
 import datetime
 import threading
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask_cors import CORS
 import redis
 import os
@@ -18,6 +18,9 @@ class WebServer:
         self.port = port
         self.domain = domain
         self.app = Flask(__name__)
+        
+        # 设置会话密钥
+        self.app.secret_key = os.urandom(24)
         CORS(self.app)
         
         # 设置模板和静态文件目录
@@ -34,12 +37,57 @@ class WebServer:
     def _setup_routes(self):
         """设置路由"""
         
+        def check_auth():
+            """检查用户是否已登录"""
+            # 如果未设置密码，则无需验证
+            if not self._get_web_password():
+                return True
+            
+            # 检查会话中是否有登录标记
+            return session.get('logged_in', False)
+        
+        def require_auth(f):
+            """需要认证的装饰器"""
+            def decorated_function(*args, **kwargs):
+                if not check_auth():
+                    return redirect(url_for('login'))
+                return f(*args, **kwargs)
+            decorated_function.__name__ = f.__name__
+            return decorated_function
+        
+        @self.app.route('/login', methods=['GET', 'POST'])
+        def login():
+            """登录页面"""
+            # 如果未设置密码，直接重定向到首页
+            web_password = self._get_web_password()
+            if not web_password:
+                session['logged_in'] = True
+                return redirect(url_for('index'))
+            
+            if request.method == 'POST':
+                password = request.form.get('password', '')
+                if password == web_password:
+                    session['logged_in'] = True
+                    return redirect(url_for('index'))
+                else:
+                    return render_template('login.html', error='密码错误')
+            
+            return render_template('login.html')
+        
+        @self.app.route('/logout')
+        def logout():
+            """登出"""
+            session.pop('logged_in', None)
+            return redirect(url_for('login'))
+        
         @self.app.route('/')
+        @require_auth
         def index():
             """主页面"""
             return render_template('index.html')
         
         @self.app.route('/api/stats')
+        @require_auth
         def get_stats():
             """获取统计信息"""
             try:
@@ -55,6 +103,7 @@ class WebServer:
                 }), 500
         
         @self.app.route('/api/config')
+        @require_auth
         def get_config():
             """获取配置信息"""
             try:
@@ -70,6 +119,7 @@ class WebServer:
                 }), 500
         
         @self.app.route('/api/config', methods=['POST'])
+        @require_auth
         def update_config():
             """更新配置"""
             try:
@@ -86,6 +136,7 @@ class WebServer:
                 }), 500
         
         @self.app.route('/api/users')
+        @require_auth
         def get_users():
             """获取用户使用情况"""
             try:
@@ -101,6 +152,7 @@ class WebServer:
                 }), 500
         
         @self.app.route('/api/groups')
+        @require_auth
         def get_groups():
             """获取群组使用情况"""
             try:
@@ -121,7 +173,6 @@ class WebServer:
             return {}
         
         today = datetime.datetime.now().strftime("%Y-%m-%d")
-        stats_key = f"astrbot:usage_stats:{today}:global"
         
         stats = {
             'total_requests': 0,
@@ -130,20 +181,24 @@ class WebServer:
             'date': today
         }
         
-        # 获取全局统计
-        if self.plugin.redis.exists(stats_key):
-            global_stats = self.plugin.redis.hgetall(stats_key)
-            stats['total_requests'] = int(global_stats.get('total_requests', 0))
-        
-        # 获取活跃用户数
-        user_pattern = f"astrbot:usage_stats:{today}:user:*"
+        # 获取活跃用户数 - 使用主插件的键格式
+        user_pattern = f"astrbot:daily_limit:{today}:*:*"
         user_keys = self.plugin.redis.keys(user_pattern)
         stats['active_users'] = len(user_keys)
         
-        # 获取活跃群组数
-        group_pattern = f"astrbot:usage_stats:{today}:group:*"
+        # 获取活跃群组数 - 使用主插件的键格式
+        group_pattern = f"astrbot:daily_limit:{today}:group:*"
         group_keys = self.plugin.redis.keys(group_pattern)
         stats['active_groups'] = len(group_keys)
+        
+        # 计算总请求数
+        total_requests = 0
+        for key in user_keys:
+            usage = self.plugin.redis.get(key)
+            if usage:
+                total_requests += int(usage)
+        
+        stats['total_requests'] = total_requests
         
         return stats
     
@@ -175,24 +230,37 @@ class WebServer:
             return []
         
         today = datetime.datetime.now().strftime("%Y-%m-%d")
-        user_pattern = f"astrbot:usage_stats:{today}:user:*"
+        # 使用主插件的键格式：astrbot:daily_limit:{today}:{group_id}:{user_id}
+        user_pattern = f"astrbot:daily_limit:{today}:*:*"
         user_keys = self.plugin.redis.keys(user_pattern)
         
         users_data = []
         for key in user_keys:
-            # 从key中提取用户ID
-            user_id = key.split(':')[-1]
-            user_stats = self.plugin.redis.hgetall(key)
-            
-            # 获取用户限制
-            user_limit = self.plugin._get_user_limit(user_id)
-            
-            users_data.append({
-                'user_id': user_id,
-                'usage_count': int(user_stats.get('total_usage', 0)),
-                'limit': user_limit,
-                'remaining': max(0, user_limit - int(user_stats.get('total_usage', 0)))
-            })
+            # 从key中提取用户ID和群组ID
+            parts = key.split(':')
+            if len(parts) >= 5:
+                user_id = parts[-1]
+                group_id = parts[-2]
+                
+                # 跳过群组键（群组键格式不同）
+                if group_id == 'group':
+                    continue
+                    
+                # 获取使用次数
+                usage = self.plugin.redis.get(key)
+                if not usage:
+                    continue
+                    
+                # 获取用户限制
+                user_limit = self.plugin._get_user_limit(user_id, group_id)
+                
+                users_data.append({
+                    'user_id': user_id,
+                    'group_id': group_id,
+                    'usage_count': int(usage),
+                    'limit': user_limit,
+                    'remaining': max(0, user_limit - int(usage))
+                })
         
         # 按使用量排序
         users_data.sort(key=lambda x: x['usage_count'], reverse=True)
@@ -204,28 +272,54 @@ class WebServer:
             return []
         
         today = datetime.datetime.now().strftime("%Y-%m-%d")
-        group_pattern = f"astrbot:usage_stats:{today}:group:*"
+        # 使用主插件的键格式：astrbot:daily_limit:{today}:group:{group_id}
+        group_pattern = f"astrbot:daily_limit:{today}:group:*"
         group_keys = self.plugin.redis.keys(group_pattern)
         
         groups_data = []
         for key in group_keys:
             # 从key中提取群组ID
-            group_id = key.split(':')[-1]
-            group_stats = self.plugin.redis.hgetall(key)
-            
-            # 获取群组限制
-            group_limit = self.plugin._get_group_limit(group_id)
-            
-            groups_data.append({
-                'group_id': group_id,
-                'usage_count': int(group_stats.get('total_usage', 0)),
-                'limit': group_limit,
-                'remaining': max(0, group_limit - int(group_stats.get('total_usage', 0)))
-            })
+            parts = key.split(':')
+            if len(parts) >= 5:
+                group_id = parts[-1]
+                
+                # 获取使用次数
+                usage = self.plugin.redis.get(key)
+                if not usage:
+                    continue
+                    
+                # 获取群组限制 - 使用虚拟用户ID来获取群组限制
+                group_limit = self.plugin._get_user_limit("dummy_user", group_id)
+                
+                # 获取群组模式
+                group_mode = self.plugin._get_group_mode(group_id)
+                
+                groups_data.append({
+                    'group_id': group_id,
+                    'usage_count': int(usage),
+                    'limit': group_limit,
+                    'remaining': max(0, group_limit - int(usage)),
+                    'mode': group_mode  # 添加群组模式字段
+                })
         
         # 按使用量排序
         groups_data.sort(key=lambda x: x['usage_count'], reverse=True)
         return groups_data
+    
+    def _get_web_password(self):
+        """获取Web管理界面密码"""
+        if not self.plugin or not self.plugin.config:
+            return "limit"  # 默认密码
+        
+        # 从配置中获取密码
+        web_config = self.plugin.config.get('web_server', {})
+        password = web_config.get('password', 'limit')
+        
+        # 如果密码为空字符串，返回None表示无需密码
+        if password == '':
+            return None
+        
+        return password
     
     def get_access_url(self):
         """获取访问链接"""

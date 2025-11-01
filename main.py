@@ -35,7 +35,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.4.3",
+    version="v2.5.0",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -50,7 +50,7 @@ class DailyLimitPlugin(star.Star):
         self.group_modes = {}  # 群组模式配置 {"group_id": "shared"或"individual"}
         self.time_period_limits = []  # 时间段限制配置
         self.usage_records = {}  # 使用记录 {"user_id": {"date": count}}
-        self.skip_patterns = []  # 跳过处理的模式列表
+        self.skip_patterns = []  # 忽略处理的模式列表
         self.web_server = None  # Web服务器实例
         self.web_server_thread = None  # Web服务器线程
 
@@ -107,10 +107,10 @@ class DailyLimitPlugin(star.Star):
                 except ValueError:
                     logger.warning(f"时间段限制配置格式错误: {start_time} - {end_time}")
 
-        # 加载跳过模式配置
-        self.skip_patterns = self.config["limits"].get("skip_patterns", ["@所有人", "#"])
+        # 加载忽略模式配置
+        self.skip_patterns = self.config["limits"].get("skip_patterns", ["#", "*"])
         
-        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个跳过模式")
+        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个忽略模式")
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件"""
@@ -249,11 +249,11 @@ class DailyLimitPlugin(star.Star):
         return f"astrbot:usage_stats:{date_str}"
 
     def _should_skip_message(self, message_str):
-        """检查消息是否应该跳过处理"""
+        """检查消息是否应该忽略处理"""
         if not message_str or not self.skip_patterns:
             return False
         
-        # 检查消息是否以任何跳过模式开头
+        # 检查消息是否以任何忽略模式开头
         for pattern in self.skip_patterns:
             if message_str.startswith(pattern):
                 return True
@@ -545,7 +545,7 @@ class DailyLimitPlugin(star.Star):
             event.stop_event()
             return False
         
-        # 检查请求是否有效：空提示或匹配跳过模式的消息不处理
+        # 检查请求是否有效：空提示或匹配忽略模式的消息不处理
         if not req.prompt.strip() or self._should_skip_message(event.message_str):
             event.stop_event()
             return False
@@ -808,8 +808,8 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.4.3 - 完整指令帮助\n"
-            "════════════════════════════\n\n"
+            "🚀 日调用限制插件 v2.5.0 - 完整指令帮助\n"
+            "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
             "└── /限制帮助 - 显示本帮助信息\n\n"
@@ -829,17 +829,17 @@ class DailyLimitPlugin(star.Star):
             "├── /limit top [数量] - 查看使用次数排行榜\n"
             "├── /limit status - 检查插件状态和健康状态\n"
             "├── /limit reset <用户ID|all> - 重置用户使用次数\n"
-            "└── /limit skip_patterns - 管理跳过处理的模式配置\n\n"
+            "└── /limit skip_patterns - 管理忽略处理的模式配置\n\n"
             "⏰ 时间段限制命令：\n"
             "├── /limit timeperiod list - 列出所有时间段限制配置\n"
             "├── /limit timeperiod add <开始时间> <结束时间> <次数> - 添加时间段限制\n"
             "├── /limit timeperiod remove <索引> - 删除时间段限制\n"
             "├── /limit timeperiod enable <索引> - 启用时间段限制\n"
             "└── /limit timeperiod disable <索引> - 禁用时间段限制\n\n"
-            "🔧 跳过模式管理命令：\n"
-            "├── /limit skip_patterns list - 查看当前跳过模式\n"
-            "├── /limit skip_patterns add <模式> - 添加跳过模式\n"
-            "├── /limit skip_patterns remove <模式> - 移除跳过模式\n"
+            "🔧 忽略模式管理命令：\n"
+            "├── /limit skip_patterns list - 查看当前忽略模式\n"
+            "├── /limit skip_patterns add <模式> - 添加忽略模式\n"
+            "├── /limit skip_patterns remove <模式> - 移除忽略模式\n"
             "└── /limit skip_patterns reset - 重置为默认模式\n\n"
             "💡 核心功能特性：\n"
             "✅ 智能限制系统：多级权限管理，支持用户、群组、豁免用户三级体系\n"
@@ -847,7 +847,7 @@ class DailyLimitPlugin(star.Star):
             "✅ 群组协作模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
             "✅ 数据监控分析：实时监控、使用统计、排行榜和状态监控\n"
             "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
-            "✅ 自定义跳过模式：可配置需要跳过处理的消息前缀\n\n"
+            "✅ 自定义忽略模式：可配置需要忽略处理的消息前缀\n\n"
             "🎯 优先级规则（从高到低）：\n"
             "1️⃣ ⏰ 时间段限制 - 优先级最高（特定时间段内的限制）\n"
             "2️⃣ 🏆 豁免用户 - 完全不受限制（白名单用户）\n"
@@ -866,9 +866,9 @@ class DailyLimitPlugin(star.Star):
             "• 普通用户可使用 /limit_status 查看自己的使用状态\n"
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
-            "• 默认跳过模式：@所有人、#（可自定义添加）\n\n"
-            "📝 版本信息：v2.4.3 | 作者：left666 | 改进：Sakura520222\n"
-            "════════════════════════════"
+            "• 默认忽略模式：#、*（可自定义添加）\n\n"
+            "📝 版本信息：v2.5.0 | 作者：left666 | 改进：Sakura520222\n"
+            "═════════════════════════"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
@@ -881,18 +881,18 @@ class DailyLimitPlugin(star.Star):
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("skip_patterns")
     async def limit_skip_patterns(self, event: AstrMessageEvent):
-        """管理跳过模式配置（仅管理员）"""
+        """管理忽略模式配置（仅管理员）"""
         args = event.message_str.strip().split()
         
         # 检查命令格式：/limit skip_patterns [action] [pattern]
         if len(args) < 3:
-            # 显示当前跳过模式和帮助信息
+            # 显示当前忽略模式和帮助信息
             patterns_str = ", ".join([f'"{pattern}"' for pattern in self.skip_patterns])
             event.set_result(MessageEventResult().message(
-                f"当前跳过模式：{patterns_str}\n"
+                f"当前忽略模式：{patterns_str}\n"
                 f"使用方式：/limit skip_patterns list - 查看当前模式\n"
-                f"使用方式：/limit skip_patterns add <模式> - 添加跳过模式\n"
-                f"使用方式：/limit skip_patterns remove <模式> - 移除跳过模式\n"
+                f"使用方式：/limit skip_patterns add <模式> - 添加忽略模式\n"
+                f"使用方式：/limit skip_patterns remove <模式> - 移除忽略模式\n"
                 f"使用方式：/limit skip_patterns reset - 重置为默认模式"
             ))
             return
@@ -900,33 +900,33 @@ class DailyLimitPlugin(star.Star):
         action = args[2]
         
         if action == "list":
-            # 显示当前跳过模式
+            # 显示当前忽略模式
             patterns_str = ", ".join([f'"{pattern}"' for pattern in self.skip_patterns])
-            event.set_result(MessageEventResult().message(f"当前跳过模式：{patterns_str}"))
+            event.set_result(MessageEventResult().message(f"当前忽略模式：{patterns_str}"))
             
         elif action == "add" and len(args) > 3:
-            # 添加跳过模式
+            # 添加忽略模式
             pattern = args[3]
             if pattern in self.skip_patterns:
-                event.set_result(MessageEventResult().message(f"跳过模式 '{pattern}' 已存在"))
+                event.set_result(MessageEventResult().message(f"忽略模式 '{pattern}' 已存在"))
             else:
                 self.skip_patterns.append(pattern)
                 # 保存到配置文件
                 self.config["limits"]["skip_patterns"] = self.skip_patterns
                 self.config.save_config()
-                event.set_result(MessageEventResult().message(f"已添加跳过模式：'{pattern}'"))
+                event.set_result(MessageEventResult().message(f"已添加忽略模式：'{pattern}'"))
                 
         elif action == "remove" and len(args) > 3:
-            # 移除跳过模式
+            # 移除忽略模式
             pattern = args[3]
             if pattern in self.skip_patterns:
                 self.skip_patterns.remove(pattern)
                 # 保存到配置文件
                 self.config["limits"]["skip_patterns"] = self.skip_patterns
                 self.config.save_config()
-                event.set_result(MessageEventResult().message(f"已移除跳过模式：'{pattern}'"))
+                event.set_result(MessageEventResult().message(f"已移除忽略模式：'{pattern}'"))
             else:
-                event.set_result(MessageEventResult().message(f"跳过模式 '{pattern}' 不存在"))
+                event.set_result(MessageEventResult().message(f"忽略模式 '{pattern}' 不存在"))
                 
         elif action == "reset":
             # 重置为默认模式
@@ -934,7 +934,7 @@ class DailyLimitPlugin(star.Star):
             # 保存到配置文件
             self.config["limits"]["skip_patterns"] = self.skip_patterns
             self.config.save_config()
-            event.set_result(MessageEventResult().message("已重置跳过模式为默认值：'@所有人', '#'"))
+            event.set_result(MessageEventResult().message("已重置忽略模式为默认值：'@所有人', '#'"))
             
         else:
             event.set_result(MessageEventResult().message("无效的命令格式，请使用 /limit skip_patterns 查看帮助"))
@@ -944,8 +944,8 @@ class DailyLimitPlugin(star.Star):
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "🚀 日调用限制插件 v2.4.3 - 管理员详细帮助\n"
-            "════════════════════════════\n\n"
+            "🚀 日调用限制插件 v2.5.0 - 管理员详细帮助\n"
+            "═════════════════════════\n\n"
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
             "├── /limit set <用户ID> <次数> - 设置特定用户的每日限制次数\n"
@@ -971,12 +971,12 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit timeperiod enable 1 - 启用第1个时间段限制\n"
             "└── /limit timeperiod disable <索引> - 禁用时间段限制\n"
             "    示例：/limit timeperiod disable 1 - 禁用第1个时间段限制\n"
-            "\n🔧 跳过模式管理命令：\n"
-            "├── /limit skip_patterns list - 查看当前跳过模式\n"
-            "├── /limit skip_patterns add <模式> - 添加跳过模式\n"
-            "│   示例：/limit skip_patterns add ! - 添加!为跳过模式\n"
-            "├── /limit skip_patterns remove <模式> - 移除跳过模式\n"
-            "│   示例：/limit skip_patterns remove # - 移除#跳过模式\n"
+            "\n🔧 忽略模式管理命令：\n"
+            "├── /limit skip_patterns list - 查看当前忽略模式\n"
+            "├── /limit skip_patterns add <模式> - 添加忽略模式\n"
+            "│   示例：/limit skip_patterns add ! - 添加!为忽略模式\n"
+            "├── /limit skip_patterns remove <模式> - 移除忽略模式\n"
+            "│   示例：/limit skip_patterns remove # - 移除#忽略模式\n"
             "└── /limit skip_patterns reset - 重置为默认模式\n"
             "    示例：/limit skip_patterns reset - 重置为默认模式[@所有人, #]\n"
             "\n📊 查询统计命令：\n"
@@ -1012,15 +1012,15 @@ class DailyLimitPlugin(star.Star):
             "✅ 群组协作模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
             "✅ 数据监控分析：实时监控、使用统计、排行榜和状态监控\n"
             "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
-            "✅ 自定义跳过模式：可配置需要跳过处理的消息前缀\n"
+            "✅ 自定义忽略模式：可配置需要忽略处理的消息前缀\n"
             "✅ 智能提醒：剩余次数提醒和使用状态监控\n"
             "\n📝 使用提示：\n"
             "• 所有命令都需要管理员权限才能使用\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 豁免用户不受任何限制规则约束\n"
-            "• 默认跳过模式：@所有人、#（可自定义添加）\n"
-            "\n📝 版本信息：v2.4.3 | 作者：left666 | 改进：Sakura520222\n"
-            "════════════════════════════"
+            "• 默认忽略模式：#、*（可自定义添加）\n"
+            "\n📝 版本信息：v2.5.0 | 作者：left666 | 改进：Sakura520222\n"
+            "═════════════════════════"
         )
 
         event.set_result(MessageEventResult().message(help_msg))
