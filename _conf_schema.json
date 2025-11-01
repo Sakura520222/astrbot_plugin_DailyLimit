@@ -135,5 +135,31 @@
                 }
             }
         }
+    },
+    "web_server": {
+        "description": "Web管理界面配置",
+        "type": "object",
+        "items": {
+            "host": {
+                "description": "Web服务器监听地址",
+                "type": "string",
+                "default": "127.0.0.1"
+            },
+            "port": {
+                "description": "Web服务器监听端口",
+                "type": "int",
+                "default": 8080
+            },
+            "debug": {
+                "description": "是否启用调试模式",
+                "type": "bool",
+                "default": false
+            },
+            "domain": {
+                "description": "自定义域名（用于生成访问链接）",
+                "type": "string",
+                "default": ""
+            }
+        }
     }
 }

@@ -6,11 +6,21 @@
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
+---
+<div align="center">
+
+
+![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
+![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
+![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
+
+![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
+![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
+
+</div>
+
 
 **智能管理AI资源使用，防止滥用，提升用户体验**
-
-[![Star](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=social)](https://github.com/left666/astrbot_plugin_daily_limit)
-
 </div>
 
 ## 📖 简介
@@ -85,6 +95,12 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
     "user_limits": [],
     "group_mode_settings": [],
     "time_period_limits": []
+  },
+  "web_server": {
+    "host": "127.0.0.1",
+    "port": 8080,
+    "debug": false,
+    "domain": ""
   }
 }
 ```
@@ -145,11 +161,26 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 
 #### 跳过模式配置 (v2.4新增)
 ```json
-"skip_patterns": ["@所有人", "#"]
+"skip_patterns": ["#", "*"]
 ```
 - **功能**：定义需要跳过处理的消息前缀
 - **默认值**：`["#", "*"]`（保持向后兼容）
 - **示例**：设置`["!", "/"]`可跳过以!或/开头的消息
+
+#### Web服务器配置 (v2.4.4新增)
+```json
+"web_server": {
+    "host": "127.0.0.1",
+    "port": 8080,
+    "debug": false,
+    "domain": ""
+}
+```
+- **host**：Web服务器绑定的主机地址（默认：127.0.0.1）
+- **port**：Web服务器端口（默认：8080）
+- **debug**：调试模式开关（默认：false）
+- **domain**：自定义域名（用于生成访问链接，默认：空字符串）
+- **示例**：设置`"domain": "example.com"`可生成`https://example.com/`访问链接
 
 ### 优先级规则
 
@@ -204,6 +235,7 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 | `/limit analytics [日期]` | 多维度分析 | `/limit analytics 2025-01-23` |
 | `/limit top [数量]` | 显示排行榜 | `/limit top 5` |
 | `/limit status` | 查看插件状态 | `/limit status` |
+| `/limit domain` | 查看Web管理界面域名配置 | `/limit domain` |
 
 #### 🔄 重置功能
 | 命令 | 功能 | 示例 |
@@ -221,6 +253,12 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 | `/limit skip_patterns reset` | 重置为默认模式 | `/limit skip_patterns reset` |
 
 ## 🔄 版本更新
+
+### v2.4.4 (2025-11-01)
+- ✅ **自定义域名配置功能** - 支持在配置文件中添加自定义绑定的域名
+- ✅ **域名查看管理员指令** - 新增/limit domain命令，快速查看域名配置和访问地址
+- ✅ **智能访问链接生成** - 根据域名配置自动生成合适的访问链接格式
+- ✅ **Web管理界面优化** - 支持通过自定义域名访问Web管理界面
 
 ### v2.4.3 (2025-10-22)
 - ✅ **全面优化/limit_status指令返回内容** - 大幅改进状态显示格式和用户体验
@@ -302,3 +340,13 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 - [Sakura520222](https://github.com/Sakura520222)
 
 *感谢所有参与测试、反馈和贡献的社区成员！*
+
+---
+
+<div align="center">
+
+**💫 您的每一个Star都是对我们最大的支持！**
+
+[![Star History Chart](https://api.star-history.com/svg?repos=left666/astrbot_plugin_daily_limit&type=Date)](https://star-history.com/#left666/astrbot_plugin_daily_limit&Date)
+
+</div>
