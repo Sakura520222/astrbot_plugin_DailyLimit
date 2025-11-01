@@ -1,4 +1,4 @@
-# 🚀 AstrBot 日调用限制插件 v2.4.3
+# 🚀 AstrBot 日调用限制插件 v2.4.4
 
 <div align="center">
 
