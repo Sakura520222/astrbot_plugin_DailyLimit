@@ -1,26 +1,23 @@
 # 🚀 AstrBot 日调用限制插件 v2.4.4
 
 <div align="center">
-
 ![Version](https://img.shields.io/badge/版本-v2.4.4-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
----
-<div align="center">
-
+![Status](https://img.shields.io/badge/Web功能-开发测试阶段-orange)
 
 ![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
 ![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
-![GitHub Issues](https://img.shields.io/badge/github/issues-开发测试阶段-orange)
+![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
 
 ![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
 ![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
 
-</div>
-
+---
 
 **智能管理AI资源使用，防止滥用，提升用户体验**
+
 </div>
 
 > ⚠️ **重要提示：Web管理界面功能当前处于开发测试阶段**
