@@ -1456,7 +1456,7 @@ class DailyLimitPlugin(star.Star):
             port = web_config.get("port", 8080)
             
             domain_msg = "🌐 域名配置信息\n"
-            domain_msg += "════════════════════════\n"
+            domain_msg += "═════════════\n"
             
             if domain:
                 domain_msg += f"✅ 已配置自定义域名: {domain}\n"
