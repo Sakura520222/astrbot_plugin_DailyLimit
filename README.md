@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.4.3-blue)
+![Version](https://img.shields.io/badge/版本-v2.4.4-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -12,7 +12,7 @@
 
 ![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
 ![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
-![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
+![GitHub Issues](https://img.shields.io/badge/github/issues-开发测试阶段-orange)
 
 ![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
 ![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
@@ -22,6 +22,10 @@
 
 **智能管理AI资源使用，防止滥用，提升用户体验**
 </div>
+
+> ⚠️ **重要提示：Web管理界面功能当前处于开发测试阶段**
+> 
+> 请注意，v2.4.4版本中的Web管理界面功能目前仍在开发测试中，可能存在功能不完整、界面不稳定或性能问题。建议在生产环境中谨慎使用，并随时关注后续版本的更新。
 
 ## 📖 简介
 
@@ -259,6 +263,7 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 - ✅ **域名查看管理员指令** - 新增/limit domain命令，快速查看域名配置和访问地址
 - ✅ **智能访问链接生成** - 根据域名配置自动生成合适的访问链接格式
 - ✅ **Web管理界面优化** - 支持通过自定义域名访问Web管理界面
+- ⚠️ **Web功能开发测试阶段** - Web管理界面当前处于开发测试阶段，功能可能不完整，请谨慎使用
 
 ### v2.4.3 (2025-10-22)
 - ✅ **全面优化/limit_status指令返回内容** - 大幅改进状态显示格式和用户体验
