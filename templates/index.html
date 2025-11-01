@@ -583,7 +583,10 @@
         <div class="header">
             <h1>🌸 每日限制插件 - 管理界面</h1>
             <p>🌸 实时监控用户使用情况和配置管理 🌸</p>
-            <button class="refresh-btn" onclick="loadData()">🌸 刷新数据</button>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button class="refresh-btn" onclick="loadData()">🌸 刷新数据</button>
+                <button class="refresh-btn" onclick="logout()" style="background: linear-gradient(135deg, #ffb74d, #ff9800);">🌸 退出登录</button>
+            </div>
         </div>
         
         <!-- 统计概览 -->
@@ -685,6 +688,13 @@
             // 创建樱花效果
             setInterval(createSakura, 500);
         });
+        
+        // 登出函数
+        function logout() {
+            if (confirm('确定要退出登录吗？')) {
+                window.location.href = '/logout';
+            }
+        }
         
         async function loadData() {
             try {
@@ -848,7 +858,7 @@
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 基本配置</h4>
                             <p><strong>默认每日限制:</strong> ${config.default_daily_limit}</p>
-                            <p><strong>跳过模式:</strong> ${config.skip_patterns.join(', ') || '无'}</p>
+                            <p><strong>忽略模式:</strong> ${config.skip_patterns.join(', ') || '无'}</p>
                         </div>
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 豁免用户</h4>
