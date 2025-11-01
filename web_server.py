@@ -4,9 +4,12 @@ Web管理界面服务器
 """
 import json
 import datetime
+import threading
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import redis
+import os
+import signal
 
 class WebServer:
     def __init__(self, daily_limit_plugin, host='127.0.0.1', port=8080, domain=''):
@@ -20,6 +23,11 @@ class WebServer:
         # 设置模板和静态文件目录
         self.app.template_folder = 'templates'
         self.app.static_folder = 'static'
+        
+        # Web服务器控制变量
+        self._server_thread = None
+        self._server_running = False
+        self._server_instance = None
         
         self._setup_routes()
     
@@ -234,6 +242,7 @@ class WebServer:
     def start(self):
         """启动Web服务器"""
         try:
+            self._server_running = True
             self.app.run(host=self.host, port=self.port, debug=False)
             return True
         except Exception as e:
@@ -242,14 +251,41 @@ class WebServer:
     
     def start_async(self):
         """异步启动Web服务器"""
-        import threading
-        
         def run_server():
-            self.app.run(host=self.host, port=self.port, debug=False, use_reloader=False)
+            try:
+                self._server_running = True
+                from werkzeug.serving import make_server
+                self._server_instance = make_server(self.host, self.port, self.app)
+                self._server_instance.serve_forever()
+            except Exception as e:
+                print(f"Web服务器运行错误: {e}")
+                self._server_running = False
         
-        thread = threading.Thread(target=run_server, daemon=True)
-        thread.start()
+        # 使用非守护线程，确保插件重载时能正确停止
+        self._server_thread = threading.Thread(target=run_server, daemon=False)
+        self._server_thread.start()
         return True
+    
+    def stop(self):
+        """停止Web服务器"""
+        if self._server_instance:
+            try:
+                self._server_instance.shutdown()
+                self._server_instance = None
+            except Exception as e:
+                print(f"停止Web服务器时出错: {e}")
+        
+        if self._server_thread and self._server_thread.is_alive():
+            try:
+                # 等待线程结束，最多等待5秒
+                self._server_thread.join(timeout=5)
+                if self._server_thread.is_alive():
+                    print("Web服务器线程未在5秒内结束，强制终止")
+            except Exception as e:
+                print(f"等待Web服务器线程结束时出错: {e}")
+        
+        self._server_running = False
+        print("Web服务器已停止")
 
 if __name__ == "__main__":
     # 测试用

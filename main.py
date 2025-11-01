@@ -1694,10 +1694,27 @@ class DailyLimitPlugin(star.Star):
         # 停止Web服务器
         if self.web_server:
             try:
+                logger.info("正在停止Web服务器...")
                 self.web_server.stop()
                 logger.info("Web服务器已停止")
             except Exception as e:
                 logger.error(f"停止Web服务器失败: {str(e)}")
+        
+        # 清理Web服务器线程
+        if self.web_server_thread and self.web_server_thread.is_alive():
+            try:
+                logger.info("等待Web服务器线程结束...")
+                self.web_server_thread.join(timeout=3)  # 最多等待3秒
+                if self.web_server_thread.is_alive():
+                    logger.warning("Web服务器线程未在3秒内结束")
+                else:
+                    logger.info("Web服务器线程已结束")
+            except Exception as e:
+                logger.error(f"等待Web服务器线程结束时出错: {str(e)}")
+        
+        # 清理Web服务器实例
+        self.web_server = None
+        self.web_server_thread = None
         
         logger.info("日调用限制插件已终止")
 
