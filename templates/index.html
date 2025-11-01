@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌸 每日限制插件 - 管理界面</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #ffb7c5 0%, #ff9eb5 25%, #ff85a1 50%, #ff6b8b 75%, #ff4777 100%);
+            min-height: 100vh;
+            color: #5a3d5c;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        /* 樱花飘落效果 */
+        .sakura {
+            position: absolute;
+            top: -50px;
+            width: 30px;
+            height: 30px;
+            background: radial-gradient(circle, #fff 30%, transparent 70%);
+            border-radius: 50% 0 50% 50%;
+            opacity: 0.7;
+            animation: fall linear infinite;
+            z-index: 0;
+        }
+        
+        @keyframes fall {
+            to {
+                transform: translateY(100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 240, 245, 0.95) 100%);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 25px;
+            box-shadow: 0 12px 40px rgba(255, 105, 180, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #ff9eb5, #ff6b8b, #ff4777);
+        }
+        
+        .header h1 {
+            color: #d63384;
+            margin-bottom: 12px;
+            font-size: 2.8rem;
+            text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.5);
+            background: linear-gradient(45deg, #d63384, #e83e8c, #fd7e14);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header p {
+            color: #8b5a7c;
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 250, 0.95) 100%);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(255, 105, 180, 0.15);
+            transition: all 0.4s ease;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '🌸';
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 1.5rem;
+            opacity: 0.3;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 15px 40px rgba(255, 105, 180, 0.25);
+        }
+        
+        .stat-number {
+            font-size: 3rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #d63384, #e83e8c, #fd7e14);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+            text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.5);
+        }
+        
+        .stat-label {
+            color: #8b5a7c;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .chart-container {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 250, 0.95) 100%);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 32px rgba(255, 105, 180, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 25px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 240, 245, 0.9) 100%);
+            border-radius: 15px;
+            padding: 8px;
+            box-shadow: 0 4px 20px rgba(255, 105, 180, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 18px 25px;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 12px;
+            transition: all 0.4s ease;
+            font-weight: 600;
+            color: #8b5a7c;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .tab::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transition: left 0.6s ease;
+        }
+        
+        .tab:hover::before {
+            left: 100%;
+        }
+        
+        .tab.active {
+            background: linear-gradient(135deg, #ff9eb5, #ff6b8b);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 105, 180, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .table-container {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 250, 0.95) 100%);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(255, 105, 180, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+        
+        th, td {
+            padding: 18px 25px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 182, 193, 0.3);
+        }
+        
+        th {
+            background: linear-gradient(135deg, rgba(255, 240, 245, 0.9) 0%, rgba(255, 228, 230, 0.9) 100%);
+            font-weight: 700;
+            color: #d63384;
+            font-size: 1rem;
+            border-bottom: 2px solid rgba(255, 105, 180, 0.3);
+        }
+        
+        tr:hover {
+            background: linear-gradient(135deg, rgba(255, 245, 250, 0.6) 0%, rgba(255, 240, 245, 0.6) 100%);
+            transform: scale(1.01);
+            transition: all 0.3s ease;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: rgba(255, 182, 193, 0.3);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress {
+            height: 100%;
+            background: linear-gradient(90deg, #ff9eb5, #ff6b8b, #ff4777);
+            transition: width 0.4s ease;
+            position: relative;
+        }
+        
+        .progress::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            animation: shimmer 2s infinite;
+        }
+        
+        .progress.warning {
+            background: linear-gradient(90deg, #ffb74d, #ff9800, #f57c00);
+        }
+        
+        .progress.danger {
+            background: linear-gradient(90deg, #f48fb1, #f06292, #ec407a);
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #8b5a7c;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        
+        .loading::before {
+            content: '🌸';
+            display: block;
+            font-size: 2rem;
+            margin-bottom: 15px;
+            animation: spin 2s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: linear-gradient(135deg, rgba(255, 220, 220, 0.9) 0%, rgba(255, 200, 200, 0.9) 100%);
+            color: #d63384;
+            padding: 18px;
+            border-radius: 12px;
+            margin: 15px 0;
+            border-left: 4px solid #ff6b8b;
+            font-weight: 500;
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(135deg, #ff9eb5, #ff6b8b);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            font-weight: 600;
+            font-size: 1rem;
+            box-shadow: 0 4px 15px rgba(255, 105, 180, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .refresh-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transition: left 0.6s ease;
+        }
+        
+        .refresh-btn:hover::before {
+            left: 100%;
+        }
+        
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 105, 180, 0.4);
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .tab {
+                padding: 12px 15px;
+                font-size: 0.9rem;
+            }
+            
+            th, td {
+                padding: 12px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 樱花飘落效果容器 -->
+    <div id="sakuraContainer"></div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>🌸 每日限制插件 - 管理界面</h1>
+            <p>🌸 实时监控用户使用情况和配置管理 🌸</p>
+            <button class="refresh-btn" onclick="loadData()">🌸 刷新数据</button>
+        </div>
+        
+        <div class="stats-grid" id="statsGrid">
+            <div class="loading">正在加载数据...</div>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('users')">👥 用户使用情况</div>
+            <div class="tab" onclick="switchTab('groups')">👥 群组使用情况</div>
+            <div class="tab" onclick="switchTab('config')">⚙️ 配置管理</div>
+        </div>
+        
+        <div class="tab-content active" id="usersTab">
+            <div class="table-container">
+                <table id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>用户ID</th>
+                            <th>已使用次数</th>
+                            <th>限制次数</th>
+                            <th>剩余次数</th>
+                            <th>使用率</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="5" class="loading">正在加载用户数据...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="tab-content" id="groupsTab">
+            <div class="table-container">
+                <table id="groupsTable">
+                    <thead>
+                        <tr>
+                            <th>群组ID</th>
+                            <th>已使用次数</th>
+                            <th>限制次数</th>
+                            <th>剩余次数</th>
+                            <th>模式</th>
+                            <th>使用率</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="6" class="loading">正在加载群组数据...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="tab-content" id="configTab">
+            <div class="chart-container">
+                <h3>配置信息</h3>
+                <div id="configContent" class="loading">正在加载配置...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'users';
+        
+        // 页面加载时获取数据
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+            // 每30秒自动刷新数据
+            setInterval(loadData, 30000);
+        });
+        
+        function switchTab(tabName) {
+            // 隐藏所有标签内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 移除所有标签的激活状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的标签内容
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            
+            // 激活选中的标签
+            document.querySelectorAll('.tab').forEach(tab => {
+                if (tab.textContent.includes(getTabDisplayName(tabName))) {
+                    tab.classList.add('active');
+                }
+            });
+            
+            currentTab = tabName;
+            
+            // 如果切换到配置标签，加载配置数据
+            if (tabName === 'config') {
+                loadConfig();
+            }
+        }
+        
+        function getTabDisplayName(tabName) {
+            const names = {
+                'users': '用户使用情况',
+                'groups': '群组使用情况',
+                'config': '配置管理'
+            };
+            return names[tabName] || tabName;
+        }
+        
+        async function loadData() {
+            try {
+                await Promise.all([
+                    loadStats(),
+                    loadUsers(),
+                    loadGroups()
+                ]);
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                showError('数据加载失败: ' + error.message);
+            }
+        }
+        
+        async function loadStats() {
+            const response = await axios.get('/api/stats');
+            
+            if (response.data.success) {
+                const stats = response.data.data;
+                
+                const statsGrid = document.getElementById('statsGrid');
+                statsGrid.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.total_requests || 0}</div>
+                        <div class="stat-label">今日总调用次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.active_users || 0}</div>
+                        <div class="stat-label">活跃用户数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.active_groups || 0}</div>
+                        <div class="stat-label">活跃群组数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.date || '--'}</div>
+                        <div class="stat-label">统计日期</div>
+                    </div>
+                `;
+            } else {
+                throw new Error(response.data.error);
+            }
+        }
+        
+        async function loadUsers() {
+            const response = await axios.get('/api/users');
+            
+            if (response.data.success) {
+                const users = response.data.data;
+                const tbody = document.querySelector('#usersTable tbody');
+                
+                if (users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="loading">暂无用户数据</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = users.map(user => {
+                    const usageRate = (user.usage_count / user.limit) * 100;
+                    const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
+                    
+                    return `
+                        <tr>
+                            <td>${user.user_id}</td>
+                            <td>${user.usage_count}</td>
+                            <td>${user.limit === Infinity ? '无限制' : user.limit}</td>
+                            <td>${user.limit === Infinity ? '无限制' : user.remaining}</td>
+                            <td>
+                                <div class="progress-bar">
+                                    <div class="progress ${progressClass}" style="width: ${Math.min(usageRate, 100)}%"></div>
+                                </div>
+                                ${Math.round(usageRate)}%
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                throw new Error(response.data.error);
+            }
+        }
+        
+        async function loadGroups() {
+            const response = await axios.get('/api/groups');
+            
+            if (response.data.success) {
+                const groups = response.data.data;
+                const tbody = document.querySelector('#groupsTable tbody');
+                
+                if (groups.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="loading">暂无群组数据</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = groups.map(group => {
+                    const usageRate = (group.usage_count / group.limit) * 100;
+                    const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
+                    
+                    return `
+                        <tr>
+                            <td>${group.group_id}</td>
+                            <td>${group.usage_count}</td>
+                            <td>${group.limit === Infinity ? '无限制' : group.limit}</td>
+                            <td>${group.limit === Infinity ? '无限制' : group.remaining}</td>
+                            <td>${group.mode === 'shared' ? '共享' : '独立'}</td>
+                            <td>
+                                <div class="progress-bar">
+                                    <div class="progress ${progressClass}" style="width: ${Math.min(usageRate, 100)}%"></div>
+                                </div>
+                                ${Math.round(usageRate)}%
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                throw new Error(response.data.error);
+            }
+        }
+        
+        async function loadConfig() {
+            const response = await axios.get('/api/config');
+            
+            if (response.data.success) {
+                const config = response.data.data;
+                const configContent = document.getElementById('configContent');
+                
+                configContent.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                        <div>
+                            <h4>基本配置</h4>
+                            <p><strong>默认每日限制:</strong> ${config.default_daily_limit}</p>
+                            <p><strong>跳过模式:</strong> ${config.skip_patterns.join(', ')}</p>
+                        </div>
+                        <div>
+                            <h4>豁免用户</h4>
+                            <p>${config.exempt_users.length > 0 ? config.exempt_users.join(', ') : '无'}</p>
+                        </div>
+                        <div>
+                            <h4>群组限制</h4>
+                            <p>${config.group_limits.length} 个群组有特定限制</p>
+                        </div>
+                        <div>
+                            <h4>用户限制</h4>
+                            <p>${config.user_limits.length} 个用户有特定限制</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                throw new Error(response.data.error);
+            }
+        }
+        
+        function showError(message) {
+            // 简单的错误显示
+            alert('错误: ' + message);
+        }
+        
+        // 樱花飘落效果
+        function createSakura() {
+            const sakuraContainer = document.getElementById('sakuraContainer');
+            const sakura = document.createElement('div');
+            sakura.className = 'sakura';
+            
+            // 随机位置
+            const left = Math.random() * 100;
+            sakura.style.left = left + 'vw';
+            
+            // 随机大小
+            const size = Math.random() * 20 + 10;
+            sakura.style.width = size + 'px';
+            sakura.style.height = size + 'px';
+            
+            // 随机动画时长
+            const duration = Math.random() * 10 + 5;
+            sakura.style.animationDuration = duration + 's';
+            
+            // 随机透明度
+            const opacity = Math.random() * 0.5 + 0.3;
+            sakura.style.opacity = opacity;
+            
+            sakuraContainer.appendChild(sakura);
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+                if (sakura.parentNode) {
+                    sakura.parentNode.removeChild(sakura);
+                }
+            }, duration * 1000);
+        }
+        
+        // 初始化樱花效果
+        function initSakura() {
+            // 创建初始樱花
+            for (let i = 0; i < 15; i++) {
+                setTimeout(() => createSakura(), i * 500);
+            }
+            
+            // 持续创建樱花
+            setInterval(() => {
+                if (Math.random() > 0.3) {
+                    createSakura();
+                }
+            }, 1000);
+        }
+        
+        // 页面加载完成后初始化樱花效果
+        document.addEventListener('DOMContentLoaded', function() {
+            initSakura();
+        });
+    </script>
+</body>
+</html>
