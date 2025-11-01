@@ -43,7 +43,7 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
             position: relative;
@@ -54,8 +54,8 @@
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 240, 245, 0.95) 100%);
             backdrop-filter: blur(15px);
             border-radius: 20px;
-            padding: 35px;
-            margin-bottom: 25px;
+            padding: 25px;
+            margin-bottom: 20px;
             box-shadow: 0 12px 40px rgba(255, 105, 180, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.3);
             position: relative;
@@ -74,8 +74,8 @@
         
         .header h1 {
             color: #d63384;
-            margin-bottom: 12px;
-            font-size: 2.8rem;
+            margin-bottom: 8px;
+            font-size: 2.2rem;
             text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.5);
             background: linear-gradient(45deg, #d63384, #e83e8c, #fd7e14);
             -webkit-background-clip: text;
@@ -85,25 +85,32 @@
         
         .header p {
             color: #8b5a7c;
-            font-size: 1.2rem;
+            font-size: 1rem;
             font-weight: 500;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
         }
         
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 25px;
-            margin-bottom: 25px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
         }
         
         .stat-card {
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 250, 0.95) 100%);
             backdrop-filter: blur(15px);
-            border-radius: 20px;
-            padding: 30px;
+            border-radius: 15px;
+            padding: 20px;
             text-align: center;
-            box-shadow: 0 8px 32px rgba(255, 105, 180, 0.15);
-            transition: all 0.4s ease;
+            box-shadow: 0 6px 25px rgba(255, 105, 180, 0.15);
+            transition: all 0.3s ease;
             border: 1px solid rgba(255, 255, 255, 0.4);
             position: relative;
             overflow: hidden;
@@ -112,69 +119,197 @@
         .stat-card::before {
             content: '🌸';
             position: absolute;
-            top: 10px;
-            right: 15px;
-            font-size: 1.5rem;
+            top: 8px;
+            right: 12px;
+            font-size: 1.2rem;
             opacity: 0.3;
         }
         
         .stat-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 15px 40px rgba(255, 105, 180, 0.25);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(255, 105, 180, 0.25);
         }
         
         .stat-number {
-            font-size: 3rem;
+            font-size: 2.2rem;
             font-weight: bold;
             background: linear-gradient(45deg, #d63384, #e83e8c, #fd7e14);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.5);
         }
         
         .stat-label {
             color: #8b5a7c;
-            font-size: 1rem;
+            font-size: 0.9rem;
             font-weight: 600;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
         }
         
         .chart-container {
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 250, 0.95) 100%);
             backdrop-filter: blur(15px);
-            border-radius: 20px;
-            padding: 30px;
-            margin-bottom: 25px;
-            box-shadow: 0 8px 32px rgba(255, 105, 180, 0.15);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 6px 25px rgba(255, 105, 180, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            height: 300px;
+        }
+        
+        .data-section {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 250, 0.95) 100%);
+            backdrop-filter: blur(15px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 25px rgba(255, 105, 180, 0.15);
             border: 1px solid rgba(255, 255, 255, 0.4);
         }
         
-        .tabs {
+        .section-header {
             display: flex;
-            margin-bottom: 25px;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 240, 245, 0.9) 100%);
-            border-radius: 15px;
-            padding: 8px;
-            box-shadow: 0 4px 20px rgba(255, 105, 180, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(255, 182, 193, 0.3);
         }
         
-        .tab {
-            flex: 1;
-            padding: 18px 25px;
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #d63384;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .section-title::before {
+            content: '🌸';
+            font-size: 1.1rem;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            border-radius: 10px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            min-width: 600px;
+        }
+        
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 182, 193, 0.3);
+        }
+        
+        th {
+            background: linear-gradient(135deg, rgba(255, 240, 245, 0.9) 0%, rgba(255, 228, 230, 0.9) 100%);
+            font-weight: 700;
+            color: #d63384;
+            font-size: 0.9rem;
+            border-bottom: 2px solid rgba(255, 105, 180, 0.3);
+        }
+        
+        tr:hover {
+            background: linear-gradient(135deg, rgba(255, 245, 250, 0.6) 0%, rgba(255, 240, 245, 0.6) 100%);
+            transition: all 0.2s ease;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: rgba(255, 182, 193, 0.3);
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress {
+            height: 100%;
+            background: linear-gradient(90deg, #ff9eb5, #ff6b8b, #ff4777);
+            transition: width 0.3s ease;
+            position: relative;
+        }
+        
+        .progress::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            animation: shimmer 2s infinite;
+        }
+        
+        .progress.warning {
+            background: linear-gradient(90deg, #ffb74d, #ff9800, #f57c00);
+        }
+        
+        .progress.danger {
+            background: linear-gradient(90deg, #f48fb1, #f06292, #ec407a);
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .loading {
             text-align: center;
-            cursor: pointer;
-            border-radius: 12px;
-            transition: all 0.4s ease;
-            font-weight: 600;
+            padding: 30px;
             color: #8b5a7c;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        
+        .loading::before {
+            content: '🌸';
+            display: block;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            animation: spin 2s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: linear-gradient(135deg, rgba(255, 220, 220, 0.9) 0%, rgba(255, 200, 200, 0.9) 100%);
+            color: #d63384;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #ff6b8b;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(135deg, #ff9eb5, #ff6b8b);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 3px 12px rgba(255, 105, 180, 0.3);
             position: relative;
             overflow: hidden;
         }
         
-        .tab::before {
+        .refresh-btn::before {
             content: '';
             position: absolute;
             top: 0;
@@ -185,20 +320,86 @@
             transition: left 0.6s ease;
         }
         
-        .tab:hover::before {
+        .refresh-btn:hover::before {
             left: 100%;
         }
         
-        .tab.active {
-            background: linear-gradient(135deg, #ff9eb5, #ff6b8b);
-            color: white;
-            box-shadow: 0 4px 15px rgba(255, 105, 180, 0.3);
-            transform: translateY(-2px);
+        .refresh-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 18px rgba(255, 105, 180, 0.4);
         }
         
-        .tab-content {
-            display: none;
+        .status-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-top: 15px;
         }
+        
+        .status-item {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 245, 250, 0.9) 100%);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            box-shadow: 0 3px 15px rgba(255, 105, 180, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .status-value {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #d63384;
+            margin-bottom: 4px;
+        }
+        
+        .status-label {
+            font-size: 0.8rem;
+            color: #8b5a7c;
+            font-weight: 600;
+        }
+        
+        @media (max-width: 1024px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .status-summary {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            
+            .status-summary {
+                grid-template-columns: 1fr;
+            }
+            
+            th, td {
+                padding: 8px 10px;
+                font-size: 0.8rem;
+            }
+        }
+        
         
         .tab-content.active {
             display: block;
@@ -385,17 +586,36 @@
             <button class="refresh-btn" onclick="loadData()">🌸 刷新数据</button>
         </div>
         
+        <!-- 统计概览 -->
         <div class="stats-grid" id="statsGrid">
             <div class="loading">正在加载数据...</div>
         </div>
         
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('users')">👥 用户使用情况</div>
-            <div class="tab" onclick="switchTab('groups')">👥 群组使用情况</div>
-            <div class="tab" onclick="switchTab('config')">⚙️ 配置管理</div>
+        <!-- 状态直观图 -->
+        <div class="dashboard">
+            <div class="chart-container">
+                <div class="section-header">
+                    <div class="section-title">使用情况统计图</div>
+                </div>
+                <canvas id="usageChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <div class="section-header">
+                    <div class="section-title">状态概览</div>
+                </div>
+                <div class="status-summary" id="statusSummary">
+                    <div class="loading">正在加载状态数据...</div>
+                </div>
+            </div>
         </div>
         
-        <div class="tab-content active" id="usersTab">
+        <!-- 用户数据 -->
+        <div class="data-section">
+            <div class="section-header">
+                <div class="section-title">👥 用户使用情况</div>
+                <div class="section-info" id="userInfo"></div>
+            </div>
             <div class="table-container">
                 <table id="usersTable">
                     <thead>
@@ -405,18 +625,24 @@
                             <th>限制次数</th>
                             <th>剩余次数</th>
                             <th>使用率</th>
+                            <th>状态</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td colspan="5" class="loading">正在加载用户数据...</td>
+                            <td colspan="6" class="loading">正在加载用户数据...</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
         
-        <div class="tab-content" id="groupsTab">
+        <!-- 群组数据 -->
+        <div class="data-section">
+            <div class="section-header">
+                <div class="section-title">👥 群组使用情况</div>
+                <div class="section-info" id="groupInfo"></div>
+            </div>
             <div class="table-container">
                 <table id="groupsTable">
                     <thead>
@@ -427,79 +653,47 @@
                             <th>剩余次数</th>
                             <th>模式</th>
                             <th>使用率</th>
+                            <th>状态</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td colspan="6" class="loading">正在加载群组数据...</td>
+                            <td colspan="7" class="loading">正在加载群组数据...</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
         
-        <div class="tab-content" id="configTab">
-            <div class="chart-container">
-                <h3>配置信息</h3>
-                <div id="configContent" class="loading">正在加载配置...</div>
+        <!-- 配置信息 -->
+        <div class="data-section">
+            <div class="section-header">
+                <div class="section-title">⚙️ 配置信息</div>
             </div>
+            <div id="configContent" class="loading">正在加载配置...</div>
         </div>
     </div>
 
     <script>
-        let currentTab = 'users';
+        let usageChart = null;
         
         // 页面加载时获取数据
         document.addEventListener('DOMContentLoaded', function() {
             loadData();
             // 每30秒自动刷新数据
             setInterval(loadData, 30000);
+            // 创建樱花效果
+            setInterval(createSakura, 500);
         });
-        
-        function switchTab(tabName) {
-            // 隐藏所有标签内容
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // 移除所有标签的激活状态
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // 显示选中的标签内容
-            document.getElementById(tabName + 'Tab').classList.add('active');
-            
-            // 激活选中的标签
-            document.querySelectorAll('.tab').forEach(tab => {
-                if (tab.textContent.includes(getTabDisplayName(tabName))) {
-                    tab.classList.add('active');
-                }
-            });
-            
-            currentTab = tabName;
-            
-            // 如果切换到配置标签，加载配置数据
-            if (tabName === 'config') {
-                loadConfig();
-            }
-        }
-        
-        function getTabDisplayName(tabName) {
-            const names = {
-                'users': '用户使用情况',
-                'groups': '群组使用情况',
-                'config': '配置管理'
-            };
-            return names[tabName] || tabName;
-        }
         
         async function loadData() {
             try {
                 await Promise.all([
                     loadStats(),
                     loadUsers(),
-                    loadGroups()
+                    loadGroups(),
+                    loadConfig(),
+                    loadStatusSummary()
                 ]);
             } catch (error) {
                 console.error('加载数据失败:', error);
@@ -543,15 +737,30 @@
             if (response.data.success) {
                 const users = response.data.data;
                 const tbody = document.querySelector('#usersTable tbody');
+                const userInfo = document.getElementById('userInfo');
+                
+                // 更新用户信息摘要
+                const totalUsers = users.length;
+                const warningUsers = users.filter(user => {
+                    const usageRate = (user.usage_count / user.limit) * 100;
+                    return usageRate > 70 && usageRate <= 90;
+                }).length;
+                const dangerUsers = users.filter(user => {
+                    const usageRate = (user.usage_count / user.limit) * 100;
+                    return usageRate > 90;
+                }).length;
+                
+                userInfo.innerHTML = `<span style="color: #8b5a7c; font-size: 0.9rem;">总计: ${totalUsers} | 警告: ${warningUsers} | 危险: ${dangerUsers}</span>`;
                 
                 if (users.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="loading">暂无用户数据</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" class="loading">暂无用户数据</td></tr>';
                     return;
                 }
                 
                 tbody.innerHTML = users.map(user => {
                     const usageRate = (user.usage_count / user.limit) * 100;
                     const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
+                    const status = usageRate > 90 ? '🔴 危险' : usageRate > 70 ? '🟡 警告' : '🟢 正常';
                     
                     return `
                         <tr>
@@ -565,6 +774,7 @@
                                 </div>
                                 ${Math.round(usageRate)}%
                             </td>
+                            <td>${status}</td>
                         </tr>
                     `;
                 }).join('');
@@ -579,15 +789,30 @@
             if (response.data.success) {
                 const groups = response.data.data;
                 const tbody = document.querySelector('#groupsTable tbody');
+                const groupInfo = document.getElementById('groupInfo');
+                
+                // 更新群组信息摘要
+                const totalGroups = groups.length;
+                const warningGroups = groups.filter(group => {
+                    const usageRate = (group.usage_count / group.limit) * 100;
+                    return usageRate > 70 && usageRate <= 90;
+                }).length;
+                const dangerGroups = groups.filter(group => {
+                    const usageRate = (group.usage_count / group.limit) * 100;
+                    return usageRate > 90;
+                }).length;
+                
+                groupInfo.innerHTML = `<span style="color: #8b5a7c; font-size: 0.9rem;">总计: ${totalGroups} | 警告: ${warningGroups} | 危险: ${dangerGroups}</span>`;
                 
                 if (groups.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="loading">暂无群组数据</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="loading">暂无群组数据</td></tr>';
                     return;
                 }
                 
                 tbody.innerHTML = groups.map(group => {
                     const usageRate = (group.usage_count / group.limit) * 100;
                     const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
+                    const status = usageRate > 90 ? '🔴 危险' : usageRate > 70 ? '🟡 警告' : '🟢 正常';
                     
                     return `
                         <tr>
@@ -602,6 +827,7 @@
                                 </div>
                                 ${Math.round(usageRate)}%
                             </td>
+                            <td>${status}</td>
                         </tr>
                     `;
                 }).join('');
@@ -618,22 +844,22 @@
                 const configContent = document.getElementById('configContent');
                 
                 configContent.innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                        <div>
-                            <h4>基本配置</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
+                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 基本配置</h4>
                             <p><strong>默认每日限制:</strong> ${config.default_daily_limit}</p>
-                            <p><strong>跳过模式:</strong> ${config.skip_patterns.join(', ')}</p>
+                            <p><strong>跳过模式:</strong> ${config.skip_patterns.join(', ') || '无'}</p>
                         </div>
-                        <div>
-                            <h4>豁免用户</h4>
-                            <p>${config.exempt_users.length > 0 ? config.exempt_users.join(', ') : '无'}</p>
+                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
+                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 豁免用户</h4>
+                            <p>${config.exempt_users.length > 0 ? config.exempt_users.join(', ') : '无豁免用户'}</p>
                         </div>
-                        <div>
-                            <h4>群组限制</h4>
+                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
+                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 群组限制</h4>
                             <p>${config.group_limits.length} 个群组有特定限制</p>
                         </div>
-                        <div>
-                            <h4>用户限制</h4>
+                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #d63384;">
+                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 用户限制</h4>
                             <p>${config.user_limits.length} 个用户有特定限制</p>
                         </div>
                     </div>
@@ -643,9 +869,171 @@
             }
         }
         
+        async function loadStatusSummary() {
+            try {
+                const [usersResponse, groupsResponse] = await Promise.all([
+                    axios.get('/api/users'),
+                    axios.get('/api/groups')
+                ]);
+                
+                if (usersResponse.data.success && groupsResponse.data.success) {
+                    const users = usersResponse.data.data;
+                    const groups = groupsResponse.data.data;
+                    
+                    // 计算用户状态
+                    const totalUsers = users.length;
+                    const normalUsers = users.filter(user => {
+                        const usageRate = (user.usage_count / user.limit) * 100;
+                        return usageRate <= 70;
+                    }).length;
+                    const warningUsers = users.filter(user => {
+                        const usageRate = (user.usage_count / user.limit) * 100;
+                        return usageRate > 70 && usageRate <= 90;
+                    }).length;
+                    const dangerUsers = users.filter(user => {
+                        const usageRate = (user.usage_count / user.limit) * 100;
+                        return usageRate > 90;
+                    }).length;
+                    
+                    // 计算群组状态
+                    const totalGroups = groups.length;
+                    const normalGroups = groups.filter(group => {
+                        const usageRate = (group.usage_count / group.limit) * 100;
+                        return usageRate <= 70;
+                    }).length;
+                    const warningGroups = groups.filter(group => {
+                        const usageRate = (group.usage_count / group.limit) * 100;
+                        return usageRate > 70 && usageRate <= 90;
+                    }).length;
+                    const dangerGroups = groups.filter(group => {
+                        const usageRate = (group.usage_count / group.limit) * 100;
+                        return usageRate > 90;
+                    }).length;
+                    
+                    // 更新状态概览
+                    const statusSummary = document.getElementById('statusSummary');
+                    statusSummary.innerHTML = `
+                        <div class="status-item">
+                            <div class="status-value" style="color: #28a745;">${normalUsers}</div>
+                            <div class="status-label">正常用户</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value" style="color: #ffc107;">${warningUsers}</div>
+                            <div class="status-label">警告用户</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value" style="color: #dc3545;">${dangerUsers}</div>
+                            <div class="status-label">危险用户</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value" style="color: #28a745;">${normalGroups}</div>
+                            <div class="status-label">正常群组</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value" style="color: #ffc107;">${warningGroups}</div>
+                            <div class="status-label">警告群组</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value" style="color: #dc3545;">${dangerGroups}</div>
+                            <div class="status-label">危险群组</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value">${totalUsers}</div>
+                            <div class="status-label">总用户数</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-value">${totalGroups}</div>
+                            <div class="status-label">总群组数</div>
+                        </div>
+                    `;
+                    
+                    // 更新图表
+                    updateUsageChart(users, groups);
+                }
+            } catch (error) {
+                console.error('加载状态摘要失败:', error);
+            }
+        }
+        
+        function updateUsageChart(users, groups) {
+            const ctx = document.getElementById('usageChart').getContext('2d');
+            
+            // 销毁现有图表
+            if (usageChart) {
+                usageChart.destroy();
+            }
+            
+            // 计算使用率分布
+            const userRates = users.map(user => (user.usage_count / user.limit) * 100);
+            const groupRates = groups.map(group => (group.usage_count / group.limit) * 100);
+            
+            usageChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['0-30%', '30-70%', '70-90%', '90-100%'],
+                    datasets: [{
+                        data: [
+                            userRates.filter(rate => rate <= 30).length,
+                            userRates.filter(rate => rate > 30 && rate <= 70).length,
+                            userRates.filter(rate => rate > 70 && rate <= 90).length,
+                            userRates.filter(rate => rate > 90).length
+                        ],
+                        backgroundColor: [
+                            'rgba(40, 167, 69, 0.8)',
+                            'rgba(23, 162, 184, 0.8)',
+                            'rgba(255, 193, 7, 0.8)',
+                            'rgba(220, 53, 69, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgba(40, 167, 69, 1)',
+                            'rgba(23, 162, 184, 1)',
+                            'rgba(255, 193, 7, 1)',
+                            'rgba(220, 53, 69, 1)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#5a3d5c',
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: '用户使用率分布',
+                            color: '#d63384',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
         function showError(message) {
-            // 简单的错误显示
-            alert('错误: ' + message);
+            // 创建错误提示
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = '错误: ' + message;
+            
+            // 添加到页面顶部
+            const container = document.querySelector('.container');
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                errorDiv.remove();
+            }, 3000);
         }
         
         // 樱花飘落效果
@@ -671,35 +1059,34 @@
             const opacity = Math.random() * 0.5 + 0.3;
             sakura.style.opacity = opacity;
             
+            // 添加到容器
             sakuraContainer.appendChild(sakura);
             
             // 动画结束后移除元素
-            setTimeout(() => {
-                if (sakura.parentNode) {
-                    sakura.parentNode.removeChild(sakura);
-                }
-            }, duration * 1000);
+            sakura.addEventListener('animationend', function() {
+                sakura.remove();
+            });
         }
         
-        // 初始化樱花效果
-        function initSakura() {
-            // 创建初始樱花
-            for (let i = 0; i < 15; i++) {
-                setTimeout(() => createSakura(), i * 500);
-            }
+        // 手动刷新数据
+        function refreshData() {
+            const refreshBtn = document.querySelector('.refresh-btn');
+            refreshBtn.classList.add('refreshing');
             
-            // 持续创建樱花
-            setInterval(() => {
-                if (Math.random() > 0.3) {
-                    createSakura();
-                }
-            }, 1000);
+            loadData().finally(() => {
+                setTimeout(() => {
+                    refreshBtn.classList.remove('refreshing');
+                }, 500);
+            });
         }
         
-        // 页面加载完成后初始化樱花效果
-        document.addEventListener('DOMContentLoaded', function() {
-            initSakura();
-        });
+        // 平滑滚动到指定区域
+        function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
     </script>
 </body>
 </html>
