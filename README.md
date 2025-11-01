@@ -1,6 +1,7 @@
 # 🚀 AstrBot 日调用限制插件 v2.4.4
 
 <div align="center">
+
 ![Version](https://img.shields.io/badge/版本-v2.4.4-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
