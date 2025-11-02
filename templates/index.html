@@ -853,6 +853,25 @@
                 const config = response.data.data;
                 const configContent = document.getElementById('configContent');
                 
+                // 构建自定义消息配置显示
+                let customMessagesHtml = '';
+                if (config.custom_messages && Object.keys(config.custom_messages).length > 0) {
+                    customMessagesHtml = `
+                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
+                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 自定义提醒消息</h4>
+                            ${Object.entries(config.custom_messages).map(([key, value]) => {
+                                const messageTypes = {
+                                    'zero_usage_message': '私聊使用次数为0时',
+                                    'zero_usage_group_shared_message': '群组共享模式使用次数为0时',
+                                    'zero_usage_group_individual_message': '群组独立模式使用次数为0时'
+                                };
+                                const displayName = messageTypes[key] || key;
+                                return `<p><strong>${displayName}:</strong> ${value}</p>`;
+                            }).join('')}
+                        </div>
+                    `;
+                }
+                
                 configContent.innerHTML = `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
@@ -872,6 +891,7 @@
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 用户限制</h4>
                             <p>${config.user_limits.length} 个用户有特定限制</p>
                         </div>
+                        ${customMessagesHtml}
                     </div>
                 `;
             } else {
@@ -1097,6 +1117,8 @@
                 element.scrollIntoView({ behavior: 'smooth' });
             }
         }
+        
+
     </script>
 </body>
 </html>

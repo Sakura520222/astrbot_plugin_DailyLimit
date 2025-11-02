@@ -133,6 +133,60 @@
                 "items": {
                     "type": "string"
                 }
+            },
+            "custom_messages": {
+                "description": "自定义提醒消息配置",
+                "type": "object",
+                "items": {
+                    "zero_usage_message": {
+                        "description": "使用次数为0时的提醒消息",
+                        "type": "text",
+                        "default": "您的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+                        "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{user_name}（用户名）、{group_name}（群组名）"
+                    },
+                    "zero_usage_group_shared_message": {
+                        "description": "群组共享模式下使用次数为0时的提醒消息",
+                        "type": "text",
+                        "default": "本群组AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+                        "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{user_name}（用户名）、{group_name}（群组名）"
+                    },
+                    "zero_usage_group_individual_message": {
+                        "description": "群组独立模式下使用次数为0时的提醒消息",
+                        "type": "text",
+                        "default": "您在本群组的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+                        "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{user_name}（用户名）、{group_name}（群组名）"
+                    },
+                    "limit_status_private_message": {
+                        "description": "私聊中/limit_status命令返回的消息模板",
+                        "type": "text",
+                        "default": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{progress_bar}（进度条）、{usage_tip}（使用提示）、{reset_time}（重置时间）"
+                    },
+                    "limit_status_group_shared_message": {
+                        "description": "群组共享模式中/limit_status命令返回的消息模板",
+                        "type": "text",
+                        "default": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{progress_bar}（进度条）、{usage_tip}（使用提示）、{reset_time}（重置时间）、{limit_type}（限制类型）"
+                    },
+                    "limit_status_group_individual_message": {
+                        "description": "群组独立模式中/limit_status命令返回的消息模板",
+                        "type": "text",
+                        "default": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{progress_bar}（进度条）、{usage_tip}（使用提示）、{reset_time}（重置时间）、{limit_type}（限制类型）"
+                    },
+                    "limit_status_exempt_message": {
+                        "description": "豁免用户/limit_status命令返回的消息模板",
+                        "type": "text",
+                        "default": "🎉 您{group_context}没有调用次数限制（豁免用户）",
+                        "hint": "支持变量：{group_context}（群组上下文，如'在本群组'或空字符串）"
+                    },
+                    "limit_status_time_period_message": {
+                        "description": "/limit_status命令中时间段限制信息的消息模板",
+                        "type": "text",
+                        "default": "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次",
+                        "hint": "支持变量：{start_time}（开始时间）、{end_time}（结束时间）、{time_period_limit}（时间段限制）、{time_period_usage}（时间段内已使用）、{time_period_remaining}（时间段内剩余）、{time_period_progress}（时间段进度条）"
+                    }
+                }
             }
         }
     },

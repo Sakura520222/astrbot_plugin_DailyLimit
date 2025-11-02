@@ -35,7 +35,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.5.1",
+    version="v2.6.0",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -206,7 +206,9 @@ class DailyLimitPlugin(star.Star):
                 access_url = self.web_server.get_access_url()
                 logger.info(f"Web管理界面已启动，访问地址: {access_url}")
             else:
-                logger.info(f"Web管理界面已启动，访问地址: http://{host}:{port}")
+                # 使用web_server实例的实际端口，而不是配置中的端口
+                actual_port = self.web_server.port
+                logger.info(f"Web管理界面已启动，访问地址: http://{host}:{actual_port}")
             
         except Exception as e:
             logger.error(f"Web服务器初始化失败: {str(e)}")
@@ -584,20 +586,27 @@ class DailyLimitPlugin(star.Star):
             logger.info(f"用户 {user_id} 在群 {group_id} 中已达到调用限制 {limit}")
             if group_id is not None:
                 user_name = event.get_sender_name()
-                if self._get_group_mode(group_id) == "shared":
-                    await event.send(
-                        MessageChain().at(user_name, user_id).message(f"本群组AI访问次数已达上限（{usage}/{limit}），"
-                                                                      f"请稍后再试或联系管理员提升限额。")
-                    )
-                else:
-                    await event.send(
-                        MessageChain().at(user_name, user_id).message(f"您在本群组的AI访问次数已达上限（{usage}/{limit}），"
-                                                                      f"请稍后再试或联系管理员提升限额。")
-                    )
-            else:
+                group_name = event.get_group_name() or "群组"
+                group_mode = self._get_group_mode(group_id)
+                
+                # 使用自定义消息
+                custom_message = self._get_custom_zero_usage_message(
+                    usage, limit, user_name, group_name, group_mode
+                )
+                
                 await event.send(
-                    MessageChain().message(f"您的AI访问次数已达上限（{usage}/{limit}），"
-                                           f"请稍后再试或联系管理员提升限额。")
+                    MessageChain().at(user_name, user_id).message(custom_message)
+                )
+            else:
+                user_name = event.get_sender_name()
+                
+                # 使用自定义消息
+                custom_message = self._get_custom_zero_usage_message(
+                    usage, limit, user_name, None, None
+                )
+                
+                await event.send(
+                    MessageChain().message(custom_message)
                 )
             event.stop_event()  # 终止事件传播
             return False
@@ -646,9 +655,71 @@ class DailyLimitPlugin(star.Star):
         
         return f"[{bar}] {percentage:.1f}%"
 
+    def _get_custom_zero_usage_message(self, usage, limit, user_name, group_name, group_mode=None):
+        """获取自定义的使用次数为0时的提醒消息"""
+        # 获取自定义消息配置
+        custom_messages = self.config["limits"].get("custom_messages", {})
+        
+        # 计算剩余次数
+        remaining = limit - usage
+        
+        # 根据不同的场景选择不同的消息模板
+        if group_mode is not None:
+            # 群组消息
+            if group_mode == "shared":
+                # 群组共享模式
+                message_template = custom_messages.get("zero_usage_group_shared_message", 
+                    "本群组AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。")
+            else:
+                # 群组独立模式
+                message_template = custom_messages.get("zero_usage_group_individual_message", 
+                    "您在本群组的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。")
+        else:
+            # 私聊消息
+            message_template = custom_messages.get("zero_usage_message", 
+                "您的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。")
+        
+        # 替换模板中的变量
+        message = message_template.format(
+            usage=usage,
+            limit=limit,
+            remaining=remaining,
+            user_name=user_name or "用户",
+            group_name=group_name or "群组"
+        )
+        
+        return message
+
     def _get_reset_time(self):
         """获取每日重置时间"""
         return "00:00:00"
+
+    def _get_custom_message(self, message_type, default_message, **kwargs):
+        """获取自定义消息模板
+        
+        Args:
+            message_type: 消息类型
+            default_message: 默认消息模板
+            **kwargs: 模板变量
+        
+        Returns:
+            str: 格式化后的消息
+        """
+        # 获取自定义消息配置
+        custom_messages = self.config["limits"].get("custom_messages", {})
+        
+        # 如果配置了自定义消息，则使用自定义消息，否则使用默认消息
+        template = custom_messages.get(message_type, default_message)
+        
+        # 格式化消息模板
+        try:
+            return template.format(**kwargs)
+        except KeyError as e:
+            logger.warning(f"消息模板变量错误: {e}，使用默认消息")
+            return default_message.format(**kwargs)
+        except Exception as e:
+            logger.error(f"消息模板格式化错误: {e}")
+            return default_message
 
     @filter.command("limit_status")
     async def limit_status(self, event: AstrMessageEvent):
@@ -668,10 +739,14 @@ class DailyLimitPlugin(star.Star):
         # 首先检查用户是否被豁免（优先级最高）
         if str(user_id) in self.config["limits"]["exempt_users"]:
             # 用户被豁免，显示个人豁免状态
-            if group_id is not None:
-                status_msg = "🎉 您在本群组没有调用次数限制（豁免用户）"
-            else:
-                status_msg = "🎉 您没有调用次数限制（豁免用户）"
+            group_context = "在本群组" if group_id is not None else ""
+            
+            # 使用自定义消息模板
+            status_msg = self._get_custom_message(
+                "limit_status_exempt_message",
+                "🎉 您{group_context}没有调用次数限制（豁免用户）",
+                group_context=group_context
+            )
             
             # 添加时间段限制信息（即使豁免用户也显示）
             if time_period_limit is not None:
@@ -683,8 +758,36 @@ class DailyLimitPlugin(star.Star):
                         break
                 
                 if current_period_info:
-                    status_msg += f"\n\n⏰ 当前时间段限制：{current_period_info['start_time']}-{current_period_info['end_time']} ({time_period_limit}次)"
+                    # 使用自定义消息模板
+                    time_period_msg = self._get_custom_message(
+                        "limit_status_time_period_message",
+                        "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次",
+                        start_time=current_period_info['start_time'],
+                        end_time=current_period_info['end_time'],
+                        time_period_limit=time_period_limit
+                    )
+                    status_msg += time_period_msg
         else:
+            # 根据剩余次数生成使用提示
+            usage = self._get_user_usage(user_id, group_id)
+            remaining = limit - usage
+            
+            # 生成进度条
+            progress_bar = self._generate_progress_bar(usage, limit)
+            
+            # 生成使用提示
+            if remaining <= 0:
+                usage_tip = "⚠️ 今日次数已用完，请明天再试"
+            elif remaining <= limit * 0.2:  # 剩余20%以下
+                usage_tip = "⚠️ 剩余次数较少，请谨慎使用"
+            elif remaining <= limit * 0.5:  # 剩余50%以下
+                usage_tip = "💡 剩余次数适中，可继续使用"
+            else:
+                usage_tip = "✅ 剩余次数充足，可放心使用"
+            
+            # 重置时间
+            reset_time = self._get_reset_time()
+            
             # 根据群组模式显示正确的状态信息
             if group_id is not None:
                 group_mode = self._get_group_mode(group_id)
@@ -693,62 +796,86 @@ class DailyLimitPlugin(star.Star):
                     usage = self._get_group_usage(group_id)
                     remaining = limit - usage
                     
-                    # 生成进度条
+                    # 重新生成进度条和使用提示
                     progress_bar = self._generate_progress_bar(usage, limit)
                     
-                    # 检查群组是否设置了特定限制
-                    if str(group_id) in self.group_limits:
-                        # 群组有特定限制
-                        status_msg = f"👥 群组共享模式 - 特定限制\n" \
-                                   f"📊 今日已使用：{usage}/{limit} 次\n" \
-                                   f"📈 {progress_bar}\n" \
-                                   f"🎯 剩余次数：{remaining} 次"
+                    if remaining <= 0:
+                        usage_tip = "⚠️ 今日次数已用完，请明天再试"
+                    elif remaining <= limit * 0.2:
+                        usage_tip = "⚠️ 剩余次数较少，请谨慎使用"
+                    elif remaining <= limit * 0.5:
+                        usage_tip = "💡 剩余次数适中，可继续使用"
                     else:
-                        # 群组使用默认限制
-                        status_msg = f"👥 群组共享模式 - 默认限制\n" \
-                                   f"📊 今日已使用：{usage}/{limit} 次\n" \
-                                   f"📈 {progress_bar}\n" \
-                                   f"🎯 剩余次数：{remaining} 次"
+                        usage_tip = "✅ 剩余次数充足，可放心使用"
+                    
+                    # 确定限制类型
+                    limit_type = "特定限制" if str(group_id) in self.group_limits else "默认限制"
+                    
+                    # 使用自定义消息模板
+                    status_msg = self._get_custom_message(
+                        "limit_status_group_shared_message",
+                        "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        limit_type=limit_type,
+                        usage=usage,
+                        limit=limit,
+                        progress_bar=progress_bar,
+                        remaining=remaining,
+                        usage_tip=usage_tip,
+                        reset_time=reset_time
+                    )
                 else:
                     # 独立模式：显示用户个人状态
                     usage = self._get_user_usage(user_id, group_id)
                     remaining = limit - usage
                     
-                    # 生成进度条
+                    # 重新生成进度条和使用提示
                     progress_bar = self._generate_progress_bar(usage, limit)
                     
-                    # 检查用户是否设置了特定限制
-                    if str(user_id) in self.user_limits:
-                        # 用户有特定限制
-                        status_msg = f"👤 个人独立模式 - 特定限制\n" \
-                                   f"📊 今日已使用：{usage}/{limit} 次\n" \
-                                   f"📈 {progress_bar}\n" \
-                                   f"🎯 剩余次数：{remaining} 次"
-                    # 检查群组是否设置了特定限制
-                    elif str(group_id) in self.group_limits:
-                        # 群组有特定限制
-                        status_msg = f"👤 个人独立模式 - 群组限制\n" \
-                                   f"📊 今日已使用：{usage}/{limit} 次\n" \
-                                   f"📈 {progress_bar}\n" \
-                                   f"🎯 剩余次数：{remaining} 次"
+                    if remaining <= 0:
+                        usage_tip = "⚠️ 今日次数已用完，请明天再试"
+                    elif remaining <= limit * 0.2:
+                        usage_tip = "⚠️ 剩余次数较少，请谨慎使用"
+                    elif remaining <= limit * 0.5:
+                        usage_tip = "💡 剩余次数适中，可继续使用"
                     else:
-                        # 使用默认限制
-                        status_msg = f"👤 个人独立模式 - 默认限制\n" \
-                                   f"📊 今日已使用：{usage}/{limit} 次\n" \
-                                   f"📈 {progress_bar}\n" \
-                                   f"🎯 剩余次数：{remaining} 次"
+                        usage_tip = "✅ 剩余次数充足，可放心使用"
+                    
+                    # 确定限制类型
+                    if str(user_id) in self.user_limits:
+                        limit_type = "特定限制"
+                    elif str(group_id) in self.group_limits:
+                        limit_type = "群组限制"
+                    else:
+                        limit_type = "默认限制"
+                    
+                    # 使用自定义消息模板
+                    status_msg = self._get_custom_message(
+                        "limit_status_group_individual_message",
+                        "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        limit_type=limit_type,
+                        usage=usage,
+                        limit=limit,
+                        progress_bar=progress_bar,
+                        remaining=remaining,
+                        usage_tip=usage_tip,
+                        reset_time=reset_time
+                    )
             else:
                 # 私聊消息：显示个人状态
                 usage = self._get_user_usage(user_id, group_id)
                 remaining = limit - usage
                 
-                # 生成进度条
-                progress_bar = self._generate_progress_bar(usage, limit)
-                
-                status_msg = f"👤 个人使用状态\n" \
-                           f"📊 今日已使用：{usage}/{limit} 次\n" \
-                           f"📈 {progress_bar}\n" \
-                           f"🎯 剩余次数：{remaining} 次"
+                # 使用自定义消息模板
+                status_msg = self._get_custom_message(
+                    "limit_status_private_message",
+                    "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                    usage=usage,
+                    limit=limit,
+                    progress_bar=progress_bar,
+                    remaining=remaining,
+                    usage_tip=usage_tip,
+                    reset_time=reset_time
+                )
             
             # 添加时间段限制信息
             if time_period_limit is not None:
@@ -760,9 +887,6 @@ class DailyLimitPlugin(star.Star):
                         break
                 
                 if current_period_info:
-                    status_msg += f"\n\n⏰ 当前处于时间段限制：{current_period_info['start_time']}-{current_period_info['end_time']}"
-                    status_msg += f"\n📋 时间段限制：{time_period_limit} 次"
-                    
                     # 显示时间段内的使用情况
                     time_period_usage = self._get_time_period_usage(user_id, group_id)
                     time_period_remaining = time_period_limit - time_period_usage
@@ -770,37 +894,18 @@ class DailyLimitPlugin(star.Star):
                     # 生成时间段进度条
                     time_period_progress = self._generate_progress_bar(time_period_usage, time_period_limit)
                     
-                    status_msg += f"\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次"
-                    status_msg += f"\n📈 {time_period_progress}"
-                    status_msg += f"\n🎯 时间段内剩余：{time_period_remaining} 次"
-
-        # 添加使用建议和提示信息
-        if not str(user_id) in self.config["limits"]["exempt_users"]:
-            status_msg += "\n\n💡 使用提示："
-            
-            # 根据剩余次数给出建议
-            if remaining <= 0:
-                status_msg += "\n⚠️ 今日次数已用完，请明天再试"
-            elif remaining <= limit * 0.2:  # 剩余20%以下
-                status_msg += "\n⚠️ 剩余次数较少，请谨慎使用"
-            elif remaining <= limit * 0.5:  # 剩余50%以下
-                status_msg += "\n💡 剩余次数适中，可继续使用"
-            else:
-                status_msg += "\n✅ 剩余次数充足，可放心使用"
-            
-            # 添加时间段限制提示
-            if time_period_limit is not None:
-                if time_period_remaining <= 0:
-                    status_msg += "\n⏰ 当前时间段次数已用完"
-                elif time_period_remaining <= time_period_limit * 0.3:  # 剩余30%以下
-                    status_msg += "\n⏰ 当前时间段剩余次数较少"
-            
-            # 添加通用提示
-            status_msg += "\n📝 使用 /限制帮助 查看详细说明"
-            
-            # 重置时间提示
-            reset_time = self._get_reset_time()
-            status_msg += f"\n🔄 每日重置时间：{reset_time}"
+                    # 使用自定义消息模板
+                    time_period_msg = self._get_custom_message(
+                        "limit_status_time_period_message",
+                        "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次",
+                        start_time=current_period_info['start_time'],
+                        end_time=current_period_info['end_time'],
+                        time_period_limit=time_period_limit,
+                        time_period_usage=time_period_usage,
+                        time_period_progress=time_period_progress,
+                        time_period_remaining=time_period_remaining
+                    )
+                    status_msg += time_period_msg
 
         event.set_result(MessageEventResult().message(status_msg))
 
@@ -808,7 +913,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.5.1 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.6.0 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -867,7 +972,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.5.1 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.6.0 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -877,6 +982,161 @@ class DailyLimitPlugin(star.Star):
     def limit_command_group(self):
         """限制命令组"""
         pass
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("messages")
+    async def limit_messages(self, event: AstrMessageEvent):
+        """管理自定义提醒消息配置（仅管理员）"""
+        args = event.message_str.strip().split()
+        
+        # 检查命令格式：/limit messages [action] [type] [message]
+        if len(args) < 3:
+            # 显示当前自定义消息配置和帮助信息
+            custom_messages = self.config["limits"].get("custom_messages", {})
+            
+            help_msg = "📝 自定义提醒消息配置\n"
+            help_msg += "═══════════════════\n\n"
+            
+            # 显示当前配置
+            if custom_messages:
+                help_msg += "当前配置：\n"
+                for msg_type, msg_content in custom_messages.items():
+                    help_msg += f"• {msg_type}: {msg_content}\n"
+                help_msg += "\n"
+            else:
+                help_msg += "当前使用默认消息配置\n\n"
+            
+            help_msg += "使用方式：\n"
+            help_msg += "/limit messages list - 查看当前消息配置\n"
+            help_msg += "/limit messages set <类型> <消息内容> - 设置自定义消息\n"
+            help_msg += "/limit messages reset <类型> - 重置指定类型的消息为默认值\n"
+            help_msg += "/limit messages reset_all - 重置所有消息为默认值\n\n"
+            
+            help_msg += "可用消息类型：\n"
+            help_msg += "• zero_usage_message - 私聊使用次数为0时的消息\n"
+            help_msg += "• zero_usage_group_shared_message - 群组共享模式使用次数为0时的消息\n"
+            help_msg += "• zero_usage_group_individual_message - 群组独立模式使用次数为0时的消息\n"
+            help_msg += "• limit_status_private_message - /limit_status 私聊状态消息\n"
+            help_msg += "• limit_status_group_shared_message - /limit_status 群组共享模式状态消息\n"
+            help_msg += "• limit_status_group_individual_message - /limit_status 群组独立模式状态消息\n"
+            help_msg += "• limit_status_exempt_message - /limit_status 豁免用户状态消息\n"
+            help_msg += "• limit_status_time_period_message - /limit_status 时间段限制状态消息\n\n"
+            
+            help_msg += "支持变量：\n"
+            help_msg += "• {usage} - 已使用次数\n"
+            help_msg += "• {limit} - 限制次数\n"
+            help_msg += "• {remaining} - 剩余次数\n"
+            help_msg += "• {user_name} - 用户名\n"
+            help_msg += "• {group_name} - 群组名\n"
+            help_msg += "• {progress_bar} - 进度条\n"
+            help_msg += "• {usage_tip} - 使用提示\n"
+            help_msg += "• {reset_time} - 重置时间\n"
+            help_msg += "• {limit_type} - 限制类型（特定/默认/群组）\n"
+            help_msg += "• {group_context} - 群组上下文\n"
+            help_msg += "• {start_time} - 时间段开始时间\n"
+            help_msg += "• {end_time} - 时间段结束时间\n"
+            help_msg += "• {time_period_limit} - 时间段限制次数\n"
+            help_msg += "• {time_period_usage} - 时间段内已使用次数\n"
+            help_msg += "• {time_period_progress} - 时间段进度条\n"
+            help_msg += "• {time_period_remaining} - 时间段内剩余次数"
+            
+            event.set_result(MessageEventResult().message(help_msg))
+            return
+        
+        action = args[2]
+        
+        if action == "list":
+            # 显示当前自定义消息配置
+            custom_messages = self.config["limits"].get("custom_messages", {})
+            
+            if not custom_messages:
+                event.set_result(MessageEventResult().message("当前使用默认消息配置"))
+                return
+            
+            msg_list = "📝 当前自定义消息配置：\n"
+            msg_list += "═══════════════════\n\n"
+            
+            for msg_type, msg_content in custom_messages.items():
+                msg_list += f"🔹 {msg_type}:\n"
+                msg_list += f"   {msg_content}\n\n"
+            
+            event.set_result(MessageEventResult().message(msg_list))
+            
+        elif action == "set" and len(args) > 4:
+            # 设置自定义消息
+            msg_type = args[3]
+            msg_content = " ".join(args[4:])
+            
+            # 验证消息类型
+            valid_types = [
+                "zero_usage_message", "zero_usage_group_shared_message", "zero_usage_group_individual_message",
+                "limit_status_private_message", "limit_status_group_shared_message", "limit_status_group_individual_message",
+                "limit_status_exempt_message", "limit_status_time_period_message"
+            ]
+            if msg_type not in valid_types:
+                event.set_result(MessageEventResult().message(f"无效的消息类型，可用类型：{', '.join(valid_types)}"))
+                return
+            
+            # 验证消息内容是否包含必要变量（仅对zero_usage消息类型要求）
+            if msg_type.startswith("zero_usage") and ("{usage}" not in msg_content or "{limit}" not in msg_content):
+                event.set_result(MessageEventResult().message("zero_usage消息类型必须包含 {usage} 和 {limit} 变量"))
+                return
+            
+            # 保存自定义消息配置
+            if "custom_messages" not in self.config["limits"]:
+                self.config["limits"]["custom_messages"] = {}
+            
+            self.config["limits"]["custom_messages"][msg_type] = msg_content
+            self.config.save_config()
+            
+            event.set_result(MessageEventResult().message(f"✅ 已设置 {msg_type} 的自定义消息\n\n新消息内容：\n{msg_content}"))
+            
+        elif action == "reset" and len(args) > 3:
+            # 重置指定类型的消息为默认值
+            msg_type = args[3]
+            
+            # 验证消息类型
+            valid_types = [
+                "zero_usage_message", "zero_usage_group_shared_message", "zero_usage_group_individual_message",
+                "limit_status_private_message", "limit_status_group_shared_message", "limit_status_group_individual_message",
+                "limit_status_exempt_message", "limit_status_time_period_message"
+            ]
+            if msg_type not in valid_types:
+                event.set_result(MessageEventResult().message(f"无效的消息类型，可用类型：{', '.join(valid_types)}"))
+                return
+            
+            # 设置默认消息
+            default_messages = {
+                "zero_usage_message": "您的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+                "zero_usage_group_shared_message": "本群组AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+                "zero_usage_group_individual_message": "您在本群组的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+                "limit_status_private_message": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                "limit_status_group_shared_message": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                "limit_status_group_individual_message": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                "limit_status_exempt_message": "🎉 您{group_context}没有调用次数限制（豁免用户）",
+                "limit_status_time_period_message": "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次"
+            }
+            
+            # 如果存在自定义配置，则删除该类型
+            if "custom_messages" in self.config["limits"] and msg_type in self.config["limits"]["custom_messages"]:
+                del self.config["limits"]["custom_messages"][msg_type]
+                # 如果自定义配置为空，则删除整个配置节
+                if not self.config["limits"]["custom_messages"]:
+                    del self.config["limits"]["custom_messages"]
+                self.config.save_config()
+            
+            event.set_result(MessageEventResult().message(f"✅ 已重置 {msg_type} 为默认消息\n\n默认消息内容：\n{default_messages[msg_type]}"))
+            
+        elif action == "reset_all":
+            # 重置所有消息为默认值
+            if "custom_messages" in self.config["limits"]:
+                del self.config["limits"]["custom_messages"]
+                self.config.save_config()
+            
+            event.set_result(MessageEventResult().message("✅ 已重置所有消息为默认值"))
+            
+        else:
+            event.set_result(MessageEventResult().message("无效的命令格式，请使用 /limit messages 查看帮助"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("skip_patterns")
@@ -944,7 +1204,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "🚀 日调用限制插件 v2.5.1 - 管理员详细帮助\n"
+            "🚀 日调用限制插件 v2.6.0 - 管理员详细帮助\n"
             "═════════════════════════\n\n"
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
@@ -1019,7 +1279,7 @@ class DailyLimitPlugin(star.Star):
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 豁免用户不受任何限制规则约束\n"
             "• 默认忽略模式：#、*（可自定义添加）\n"
-            "\n📝 版本信息：v2.5.1 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.6.0 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
