@@ -5,6 +5,8 @@ Web管理界面服务器
 import json
 import datetime
 import threading
+import socket
+import random
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask_cors import CORS
 import redis
@@ -15,6 +17,7 @@ class WebServer:
     def __init__(self, daily_limit_plugin, host='127.0.0.1', port=8080, domain=''):
         self.plugin = daily_limit_plugin
         self.host = host
+        self.original_port = port  # 保存原始端口配置
         self.port = port
         self.domain = domain
         self.app = Flask(__name__)
@@ -32,7 +35,78 @@ class WebServer:
         self._server_running = False
         self._server_instance = None
         
+        # 检查端口占用并自动切换
+        self._check_and_adjust_port()
+        
         self._setup_routes()
+    
+    def _is_port_available(self, port):
+        """检查端口是否可用"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex((self.host, port))
+                return result != 0  # 如果连接失败，说明端口可用
+        except Exception:
+            return False
+    
+    def _find_available_port(self, start_port=None):
+        """查找可用的端口"""
+        if start_port is None:
+            start_port = self.original_port
+        
+        # 从原始端口开始，尝试100个端口范围
+        for port in range(start_port, start_port + 100):
+            if self._is_port_available(port):
+                return port
+        
+        # 如果指定范围内没有找到，随机尝试
+        for _ in range(10):
+            port = random.randint(10000, 65535)
+            if self._is_port_available(port):
+                return port
+        
+        return None  # 没有找到可用端口
+    
+    def _check_and_adjust_port(self):
+        """检查端口占用并自动调整"""
+        # 检查原始端口是否可用
+        if self._is_port_available(self.original_port):
+            self.port = self.original_port
+            print(f"Web管理界面将使用默认端口: {self.port}")
+            return
+        
+        # 端口被占用，查找可用端口
+        available_port = self._find_available_port()
+        if available_port:
+            self.port = available_port
+            print(f"警告: 默认端口 {self.original_port} 被占用，已自动切换到端口: {self.port}")
+            
+            # 保存新端口到配置
+            self._save_port_to_config(available_port)
+        else:
+            # 没有找到可用端口，使用原始端口（可能会启动失败）
+            self.port = self.original_port
+            print(f"警告: 无法找到可用端口，将尝试使用端口: {self.port}（可能会启动失败）")
+    
+    def _save_port_to_config(self, port):
+        """保存端口到配置文件"""
+        try:
+            if self.plugin and hasattr(self.plugin, 'config'):
+                # 更新配置中的端口
+                if 'web_server' not in self.plugin.config:
+                    self.plugin.config['web_server'] = {}
+                
+                self.plugin.config['web_server']['port'] = port
+                
+                # 保存配置
+                if hasattr(self.plugin.config, 'save_config'):
+                    self.plugin.config.save_config()
+                    print(f"已保存新端口 {port} 到配置文件")
+                else:
+                    print(f"警告: 无法保存端口到配置文件，配置对象缺少save_config方法")
+        except Exception as e:
+            print(f"保存端口到配置时出错: {e}")
     
     def _setup_routes(self):
         """设置路由"""
@@ -166,6 +240,8 @@ class WebServer:
                     'success': False,
                     'error': str(e)
                 }), 500
+        
+
     
     def _get_usage_stats(self):
         """获取使用统计信息"""
@@ -205,7 +281,7 @@ class WebServer:
     def _get_config_data(self):
         """获取配置数据"""
         config = self.plugin.config
-        
+
         return {
             'default_daily_limit': config['limits']['default_daily_limit'],
             'exempt_users': config['limits']['exempt_users'],
@@ -214,6 +290,7 @@ class WebServer:
             'group_mode_settings': config['limits']['group_mode_settings'],
             'time_period_limits': config['limits']['time_period_limits'],
             'skip_patterns': config['limits']['skip_patterns'],
+            'custom_messages': config['limits'].get('custom_messages', {}),
             'redis_config': config['redis']
         }
     

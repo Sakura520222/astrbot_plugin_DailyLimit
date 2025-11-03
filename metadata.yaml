@@ -1,7 +1,43 @@
+# AstrBot 插件元数据文件
+# 注意：此文件中的元数据优先级低于 @register 装饰器中的元数据
+
 name: daily_limit
 desc: 限制用户每日调用大模型的次数
-help: 使用 /限制帮助 查看使用说明
-version: v2.5.1
+help: |
+  使用 /限制帮助 查看使用说明
+  
+  功能特性：
+  - 支持群组共享模式和独立模式
+  - 支持时间段限制
+  - 支持Redis持久化存储
+  - 提供Web管理界面
+  - 支持自定义忽略模式
+
+version: v2.6.0
 author: left666 & Sakura520222
 repo: https://github.com/left666/astrbot_plugin_daily_limit
-#由Sakura520222改进并添加新功能
+
+# 插件标签（用于分类和搜索）
+tags:
+  - 安全
+  - 限制
+  - 实用
+  - 管理
+  - 使用控制
+
+# 兼容的AstrBot版本
+compatibility:
+  min_version: "3.5.1"
+  max_version: "4.5.1"
+
+# 依赖项（可选）
+dependencies:
+  - redis
+  - flask (用于Web界面)
+
+# 更新日志（可选）
+changelog:
+  v2.6.0:
+    - 全面自定义状态消息
+    - 丰富变量支持
+    - 修复已知问题

@@ -1,8 +1,8 @@
-# 🚀 AstrBot 日调用限制插件 v2.5.1
+# 🚀 AstrBot 日调用限制插件 v2.6.0
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.5.1-blue)
+![Version](https://img.shields.io/badge/版本-v2.6.0-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -265,7 +265,66 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 | `/limit skip_patterns remove <模式>` | 移除忽略模式 | `/limit skip_patterns remove #` |
 | `/limit skip_patterns reset` | 重置为默认模式 | `/limit skip_patterns reset` |
 
+#### 🔤 自定义消息管理
+| 命令 | 功能 | 示例 |
+|------|------|------|
+| `/limit messages list` | 查看所有可自定义的消息类型 | `/limit messages list` |
+| `/limit messages set <类型> <消息>` | 设置特定类型的自定义消息 | `/limit messages set private 今日次数已用完` |
+| `/limit messages reset <类型>` | 重置指定类型的消息为默认 | `/limit messages reset private` |
+| `/limit messages reset_all` | 重置所有消息为默认 | `/limit messages reset_all` |
+| `/limit custom_messages get` | 查看当前自定义消息配置 | `/limit custom_messages get` |
+| `/limit custom_messages set <类型> <消息>` | 设置特定类型的自定义消息 | `/limit custom_messages set private 今日次数已用完` |
+| `/limit custom_messages reset` | 重置为默认消息 | `/limit custom_messages reset` |
+
 ## 🔄 版本更新
+
+### v2.6.0 (2025-11-03)
+
+#### 🔤 /limit_status命令自定义消息功能
+- **全面自定义状态消息** - 支持为/limit_status命令在不同场景下配置完全自定义的返回消息
+- **多场景支持** - 支持私聊、群组共享模式、群组独立模式、豁免用户、时间段限制等五种场景的独立配置
+- **丰富变量支持** - 支持使用{usage}、{limit}、{progress_bar}、{reset_time}、{limit_type}、{group_context}等变量
+- **智能模板处理** - 自动处理模板变量错误，确保消息格式正确
+
+#### 🔧 管理员命令扩展
+| 命令 | 功能 | 示例 |
+|------|------|------|
+| `/limit messages list` | 查看所有可自定义的消息类型 | `/limit messages list` |
+| `/limit messages set <类型> <消息>` | 设置特定类型的自定义消息 | `/limit messages set limit_status_private 您的使用状态：{usage}/{limit} {progress_bar}` |
+| `/limit messages reset <类型>` | 重置指定类型的消息为默认 | `/limit messages reset limit_status_private` |
+| `/limit messages reset_all` | 重置所有消息为默认 | `/limit messages reset_all` |
+
+#### 💡 使用说明
+- **消息类型**：支持 `zero_usage_message`、`zero_usage_group_shared_message`、`zero_usage_group_individual_message`、`limit_status_private_message`、`limit_status_group_shared_message`、`limit_status_group_individual_message`、`limit_status_exempt_message`、`limit_status_time_period_message`
+- **变量支持**：不同消息类型支持不同的变量组合，具体可通过/limit messages list命令查看
+- **默认消息**：如果未配置自定义消息，将使用系统默认的优化消息
+
+### v2.5.3 (2025-11-03)
+
+#### 🔤 自定义提醒消息功能
+- **自定义零使用次数提醒** - 支持为不同场景配置当用户使用次数为0时的提醒消息
+- **多场景支持** - 支持私聊、群组共享模式、群组独立模式三种场景的独立配置
+- **管理员命令支持** - 新增/limit custom_messages系列命令用于管理自定义消息
+
+#### 🔧 管理员命令扩展
+| 命令 | 功能 | 示例 |
+|------|------|------|
+| `/limit custom_messages get` | 查看当前自定义消息配置 | `/limit custom_messages get` |
+| `/limit custom_messages set <类型> <消息>` | 设置特定类型的自定义消息 | `/limit custom_messages set private 今日次数已用完` |
+| `/limit custom_messages reset` | 重置为默认消息 | `/limit custom_messages reset` |
+
+#### 💡 使用说明
+- **消息类型**：支持 `private`（私聊）、`group_shared`（群组共享模式）、`group_individual`（群组独立模式）
+- **消息内容**：支持使用变量如 `{user_name}`（用户名）、`{group_name}`（群组名）
+- **默认消息**：如果未配置自定义消息，将使用系统默认的提醒消息
+
+### v2.5.2 (2025-11-03)
+
+- **端口占用自动检测** - Web服务器启动前自动检测默认端口是否被占用
+- **智能端口切换** - 当默认端口被占用时，自动在100个端口范围内查找可用端口
+- **随机端口备用** - 如果指定范围内没有可用端口，会随机尝试10个端口作为备用
+- **配置自动保存** - 自动将新端口保存到配置文件，下次启动时使用新端口
+- **控制台实时输出** - 在控制台显示详细的端口切换信息，便于管理员监控
 
 ### v2.5.1 (2025-11-02)
 
