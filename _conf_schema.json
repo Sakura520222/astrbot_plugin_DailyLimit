@@ -183,7 +183,7 @@
                     "limit_status_time_period_message": {
                         "description": "/limit_status命令中时间段限制信息的消息模板",
                         "type": "text",
-                        "default": "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次",
+                        "default": "⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次",
                         "hint": "支持变量：{start_time}（开始时间）、{end_time}（结束时间）、{time_period_limit}（时间段限制）、{time_period_usage}（时间段内已使用）、{time_period_remaining}（时间段内剩余）、{time_period_progress}（时间段进度条）"
                     }
                 }
