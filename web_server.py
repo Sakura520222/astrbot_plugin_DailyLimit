@@ -294,13 +294,6 @@ class WebServer:
             'redis_config': config['redis']
         }
     
-    def _update_config(self, config_data):
-        """更新配置"""
-        # 这里需要实现配置更新的逻辑
-        # 由于配置更新涉及文件操作，需要谨慎处理
-        # 暂时返回成功状态
-        return {'message': '配置更新功能待实现'}
-    
     def _get_users_data(self):
         """获取用户使用数据"""
         if not self.plugin.redis:
