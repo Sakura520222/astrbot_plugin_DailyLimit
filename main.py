@@ -35,7 +35,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.6.0",
+    version="v2.6.5",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -65,47 +65,91 @@ class DailyLimitPlugin(star.Star):
 
     def _load_limits_from_config(self):
         """从配置文件加载群组和用户特定限制"""
-        # 加载群组特定限制
-        for group_limit in self.config["limits"]["group_limits"]:
-            group_id = group_limit.get("group_id")
-            limit = group_limit.get("limit")
-            if group_id and limit is not None:
-                self.group_limits[str(group_id)] = limit
+        # 解析群组特定限制（新格式：群组ID:限制次数）
+        group_limits_text = self.config["limits"].get("group_limits", "")
+        for line in group_limits_text.strip().split('\n'):
+            line = line.strip()
+            if line and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    group_id = parts[0].strip()
+                    try:
+                        limit = int(parts[1].strip())
+                        if group_id and limit > 0:
+                            self.group_limits[group_id] = limit
+                    except ValueError:
+                        logger.warning(f"群组限制配置格式错误: {line}")
 
-        # 加载用户特定限制
-        for user_limit in self.config["limits"]["user_limits"]:
-            user_id = user_limit.get("user_id")
-            limit = user_limit.get("limit")
-            if user_id and limit is not None:
-                self.user_limits[str(user_id)] = limit
+        # 解析用户特定限制（新格式：用户ID:限制次数）
+        user_limits_text = self.config["limits"].get("user_limits", "")
+        for line in user_limits_text.strip().split('\n'):
+            line = line.strip()
+            if line and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    user_id = parts[0].strip()
+                    try:
+                        limit = int(parts[1].strip())
+                        if user_id and limit > 0:
+                            self.user_limits[user_id] = limit
+                    except ValueError:
+                        logger.warning(f"用户限制配置格式错误: {line}")
 
-        # 加载群组模式配置
-        for group_mode in self.config["limits"]["group_mode_settings"]:
-            group_id = group_mode.get("group_id")
-            mode = group_mode.get("mode")
-            if group_id and mode in ["shared", "individual"]:
-                self.group_modes[str(group_id)] = mode
+        # 解析群组模式配置（新格式：群组ID:模式）
+        group_mode_text = self.config["limits"].get("group_mode_settings", "")
+        for line in group_mode_text.strip().split('\n'):
+            line = line.strip()
+            if line and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    group_id = parts[0].strip()
+                    mode = parts[1].strip()
+                    if group_id and mode in ["shared", "individual"]:
+                        self.group_modes[group_id] = mode
+                    else:
+                        logger.warning(f"群组模式配置格式错误: {line}")
 
-        # 加载时间段限制配置
-        time_period_limits = self.config["limits"].get("time_period_limits", [])
-        for time_limit in time_period_limits:
-            start_time = time_limit.get("start_time")
-            end_time = time_limit.get("end_time")
-            limit = time_limit.get("limit")
-            enabled = time_limit.get("enabled", True)
-            
-            if start_time and end_time and limit is not None and enabled:
-                # 验证时间格式
-                try:
-                    datetime.datetime.strptime(start_time, "%H:%M")
-                    datetime.datetime.strptime(end_time, "%H:%M")
-                    self.time_period_limits.append({
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "limit": limit
-                    })
-                except ValueError:
-                    logger.warning(f"时间段限制配置格式错误: {start_time} - {end_time}")
+        # 解析时间段限制配置（新格式：开始时间-结束时间:限制次数:是否启用）
+        time_period_text = self.config["limits"].get("time_period_limits", "")
+        for line in time_period_text.strip().split('\n'):
+            line = line.strip()
+            if line and ':' in line:
+                # 先按冒号分割
+                parts = line.split(':', 2)
+                if len(parts) >= 2:
+                    time_range = parts[0].strip()
+                    # 检查时间范围格式
+                    if '-' in time_range:
+                        time_parts = time_range.split('-')
+                        if len(time_parts) == 2:
+                            start_time = time_parts[0].strip()
+                            end_time = time_parts[1].strip()
+                            
+                            # 验证时间格式
+                            try:
+                                datetime.datetime.strptime(start_time, "%H:%M")
+                                datetime.datetime.strptime(end_time, "%H:%M")
+                                
+                                # 解析限制次数
+                                try:
+                                    limit = int(parts[1].strip())
+                                    
+                                    # 解析是否启用（默认为True）
+                                    enabled = True
+                                    if len(parts) >= 3:
+                                        enabled_str = parts[2].strip().lower()
+                                        enabled = enabled_str in ['true', '1', 'yes', 'y']
+                                    
+                                    if limit > 0 and enabled:
+                                        self.time_period_limits.append({
+                                            "start_time": start_time,
+                                            "end_time": end_time,
+                                            "limit": limit
+                                        })
+                                except ValueError:
+                                    logger.warning(f"时间段限制次数格式错误: {line}")
+                            except ValueError:
+                                logger.warning(f"时间段限制时间格式错误: {line}")
 
         # 加载忽略模式配置
         self.skip_patterns = self.config["limits"].get("skip_patterns", ["#", "*"])
@@ -113,54 +157,96 @@ class DailyLimitPlugin(star.Star):
         logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个忽略模式")
 
     def _save_group_limit(self, group_id, limit):
-        """保存群组特定限制到配置文件"""
+        """保存群组特定限制到配置文件（新格式：群组ID:限制次数）"""
         group_id = str(group_id)
-
-        # 检查是否已存在该群组的限制
-        group_limits = self.config["limits"]["group_limits"]
-        for i, group_limit in enumerate(group_limits):
-            if str(group_limit.get("group_id")) == group_id:
-                # 更新现有限制
-                group_limits[i]["limit"] = limit
-                self.config.save_config()
-                return
-
-        # 添加新的群组限制
-        group_limits.append({"group_id": group_id, "limit": limit})
+        
+        # 获取当前配置文本
+        current_text = self.config["limits"].get("group_limits", "").strip()
+        lines = current_text.split('\n') if current_text else []
+        
+        # 查找并更新现有行，或添加新行
+        updated = False
+        new_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2 and parts[0].strip() == group_id:
+                    # 更新现有行
+                    new_lines.append(f"{group_id}:{limit}")
+                    updated = True
+                else:
+                    # 保留其他行
+                    new_lines.append(line)
+        
+        # 如果没有找到现有行，添加新行
+        if not updated:
+            new_lines.append(f"{group_id}:{limit}")
+        
+        # 更新配置并保存
+        self.config["limits"]["group_limits"] = '\n'.join(new_lines)
         self.config.save_config()
 
     def _save_user_limit(self, user_id, limit):
-        """保存用户特定限制到配置文件"""
+        """保存用户特定限制到配置文件（新格式：用户ID:限制次数）"""
         user_id = str(user_id)
-
-        # 检查是否已存在该用户的限制
-        user_limits = self.config["limits"]["user_limits"]
-        for i, user_limit in enumerate(user_limits):
-            if str(user_limit.get("user_id")) == user_id:
-                # 更新现有限制
-                user_limits[i]["limit"] = limit
-                self.config.save_config()
-                return
-
-        # 添加新的用户限制
-        user_limits.append({"user_id": user_id, "limit": limit})
+        
+        # 获取当前配置文本
+        current_text = self.config["limits"].get("user_limits", "").strip()
+        lines = current_text.split('\n') if current_text else []
+        
+        # 查找并更新现有行，或添加新行
+        updated = False
+        new_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2 and parts[0].strip() == user_id:
+                    # 更新现有行
+                    new_lines.append(f"{user_id}:{limit}")
+                    updated = True
+                else:
+                    # 保留其他行
+                    new_lines.append(line)
+        
+        # 如果没有找到现有行，添加新行
+        if not updated:
+            new_lines.append(f"{user_id}:{limit}")
+        
+        # 更新配置并保存
+        self.config["limits"]["user_limits"] = '\n'.join(new_lines)
         self.config.save_config()
 
     def _save_group_mode(self, group_id, mode):
-        """保存群组模式配置到配置文件"""
+        """保存群组模式配置到配置文件（新格式：群组ID:模式）"""
         group_id = str(group_id)
-
-        # 检查是否已存在该群组的模式配置
-        group_modes = self.config["limits"]["group_mode_settings"]
-        for i, group_mode in enumerate(group_modes):
-            if str(group_mode.get("group_id")) == group_id:
-                # 更新现有模式
-                group_modes[i]["mode"] = mode
-                self.config.save_config()
-                return
-
-        # 添加新的群组模式配置
-        group_modes.append({"group_id": group_id, "mode": mode})
+        
+        # 获取当前配置文本
+        current_text = self.config["limits"].get("group_mode_settings", "").strip()
+        lines = current_text.split('\n') if current_text else []
+        
+        # 查找并更新现有行，或添加新行
+        updated = False
+        new_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2 and parts[0].strip() == group_id:
+                    # 更新现有行
+                    new_lines.append(f"{group_id}:{mode}")
+                    updated = True
+                else:
+                    # 保留其他行
+                    new_lines.append(line)
+        
+        # 如果没有找到现有行，添加新行
+        if not updated:
+            new_lines.append(f"{group_id}:{mode}")
+        
+        # 更新配置并保存
+        self.config["limits"]["group_mode_settings"] = '\n'.join(new_lines)
         self.config.save_config()
 
     def _init_redis(self):
@@ -913,7 +999,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.0 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.6.5 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -972,7 +1058,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.6.0 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.6.5 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -1204,7 +1290,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.0 - 管理员详细帮助\n"
+            "🚀 日调用限制插件 v2.6.5 - 管理员详细帮助\n"
             "═════════════════════════\n\n"
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
@@ -1279,7 +1365,7 @@ class DailyLimitPlugin(star.Star):
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 豁免用户不受任何限制规则约束\n"
             "• 默认忽略模式：#、*（可自定义添加）\n"
-            "\n📝 版本信息：v2.6.0 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.6.5 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -2103,14 +2189,16 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message("索引必须为整数"))
 
     def _save_time_period_limits(self):
-        """保存时间段限制配置到配置文件"""
+        """保存时间段限制配置到配置文件（新格式：开始时间-结束时间:限制次数:是否启用）"""
         try:
-            # 确保time_period_limits字段存在
-            if "time_period_limits" not in self.config["limits"]:
-                self.config["limits"]["time_period_limits"] = []
+            # 构建新的文本格式配置
+            lines = []
+            for period in self.time_period_limits:
+                line = f"{period['start_time']}-{period['end_time']}:{period['limit']}:{str(period['enabled']).lower()}"
+                lines.append(line)
             
             # 更新配置对象
-            self.config["limits"]["time_period_limits"] = self.time_period_limits
+            self.config["limits"]["time_period_limits"] = '\n'.join(lines)
             # 保存到配置文件
             self.config.save_config()
             logger.info(f"已保存时间段限制配置，共 {len(self.time_period_limits)} 个时间段")

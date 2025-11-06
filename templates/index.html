@@ -853,6 +853,10 @@
                 const config = response.data.data;
                 const configContent = document.getElementById('configContent');
                 
+                // 解析文本格式的群组限制和用户限制
+                const groupLimitsCount = config.group_limits ? config.group_limits.trim().split('\n').filter(line => line.trim()).length : 0;
+                const userLimitsCount = config.user_limits ? config.user_limits.trim().split('\n').filter(line => line.trim()).length : 0;
+                
                 configContent.innerHTML = `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
@@ -866,11 +870,11 @@
                         </div>
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 群组限制</h4>
-                            <p>${config.group_limits.length} 个群组有特定限制</p>
+                            <p>${groupLimitsCount} 个群组有特定限制</p>
                         </div>
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #d63384;">
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 用户限制</h4>
-                            <p>${config.user_limits.length} 个用户有特定限制</p>
+                            <p>${userLimitsCount} 个用户有特定限制</p>
                         </div>
                     </div>
                 `;
