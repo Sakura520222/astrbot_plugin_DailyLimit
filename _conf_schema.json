@@ -41,89 +41,27 @@
             },
             "group_limits": {
                 "description": "特定群组限制",
-                "type": "list",
-                "default": [],
-                "hint": "格式为：{\"group_id\": 群组ID, \"limit\": 每日限制次数}(使用指令/sid查看ID)",
-                "items": {
-                    "type": "object",
-                    "items": {
-                        "group_id": {
-                            "description": "群组ID",
-                            "type": "string"
-                        },
-                        "limit": {
-                            "description": "每日限制次数",
-                            "type": "int"
-                        }
-                    }
-                }
+                "type": "text",
+                "default": "",
+                "hint": "格式为：群组ID:每日限制次数，一行一个（使用指令/sid查看ID）\n示例：\n123456:50\n789012:30\n345678:100"
             },
             "group_mode_settings": {
                 "description": "群组模式配置",
-                "type": "list",
-                "default": [],
-                "hint": "格式为：{\"group_id\": 群组ID, \"mode\": \"shared\"或\"individual\"}",
-                "items": {
-                    "type": "object",
-                    "items": {
-                        "group_id": {
-                            "description": "群组ID",
-                            "type": "string"
-                        },
-                        "mode": {
-                            "description": "群组模式：shared(共享)或individual(独立)",
-                            "type": "string",
-                            "enum": ["shared", "individual"]
-                        }
-                    }
-                }
+                "type": "text",
+                "default": "",
+                "hint": "格式为：群组ID:模式(shared或individual)，一行一个\n示例：\n123456:shared\n789012:individual\n345678:shared"
             },
             "user_limits": {
                 "description": "特定用户限制",
-                "type": "list",
-                "default": [],
-                "hint": "格式为：{\"user_id\": 用户ID, \"limit\": 每日限制次数}",
-                "items": {
-                    "type": "object",
-                    "items": {
-                        "user_id": {
-                            "description": "用户ID",
-                            "type": "string"
-                        },
-                        "limit": {
-                            "description": "每日限制次数",
-                            "type": "int"
-                        }
-                    }
-                }
+                "type": "text",
+                "default": "",
+                "hint": "格式为：用户ID:每日限制次数，一行一个\n示例：\n123456789:100\n987654321:50\n555666777:200"
             },
             "time_period_limits": {
                 "description": "时间段限制配置",
-                "type": "list",
-                "default": [],
-                "hint": "格式为：{\"start_time\": \"HH:MM\", \"end_time\": \"HH:MM\", \"limit\": 限制次数, \"enabled\": true/false}",
-                "items": {
-                    "type": "object",
-                    "items": {
-                        "start_time": {
-                            "description": "开始时间（HH:MM格式）",
-                            "type": "string"
-                        },
-                        "end_time": {
-                            "description": "结束时间（HH:MM格式）",
-                            "type": "string"
-                        },
-                        "limit": {
-                            "description": "该时间段内的限制次数",
-                            "type": "int"
-                        },
-                        "enabled": {
-                            "description": "是否启用该时间段限制",
-                            "type": "bool",
-                            "default": false
-                        }
-                    }
-                }
+                "type": "text",
+                "default": "",
+                "hint": "格式为：开始时间-结束时间:限制次数:是否启用(true/false)，一行一个\n示例：\n09:00-12:00:10:true\n14:00-18:00:20:false\n20:00-23:00:15:true"
             },
             "skip_patterns": {
                 "description": "忽略处理的模式配置",
