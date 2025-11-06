@@ -65,96 +65,135 @@ class DailyLimitPlugin(star.Star):
 
     def _load_limits_from_config(self):
         """从配置文件加载群组和用户特定限制"""
-        # 解析群组特定限制（新格式：群组ID:限制次数）
+        self._parse_group_limits()
+        self._parse_user_limits()
+        self._parse_group_modes()
+        self._parse_time_period_limits()
+        self._load_skip_patterns()
+        
+        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个忽略模式")
+
+    def _parse_group_limits(self):
+        """解析群组特定限制配置"""
         group_limits_text = self.config["limits"].get("group_limits", "")
         for line in group_limits_text.strip().split('\n'):
-            line = line.strip()
-            if line and ':' in line:
-                parts = line.split(':', 1)
-                if len(parts) == 2:
-                    group_id = parts[0].strip()
-                    try:
-                        limit = int(parts[1].strip())
-                        if group_id and limit > 0:
-                            self.group_limits[group_id] = limit
-                    except ValueError:
-                        logger.warning(f"群组限制配置格式错误: {line}")
+            self._parse_limit_line(line, self.group_limits, "群组")
 
-        # 解析用户特定限制（新格式：用户ID:限制次数）
+    def _parse_user_limits(self):
+        """解析用户特定限制配置"""
         user_limits_text = self.config["limits"].get("user_limits", "")
         for line in user_limits_text.strip().split('\n'):
-            line = line.strip()
-            if line and ':' in line:
-                parts = line.split(':', 1)
-                if len(parts) == 2:
-                    user_id = parts[0].strip()
-                    try:
-                        limit = int(parts[1].strip())
-                        if user_id and limit > 0:
-                            self.user_limits[user_id] = limit
-                    except ValueError:
-                        logger.warning(f"用户限制配置格式错误: {line}")
+            self._parse_limit_line(line, self.user_limits, "用户")
 
-        # 解析群组模式配置（新格式：群组ID:模式）
+    def _parse_limit_line(self, line, limits_dict, limit_type):
+        """解析单行限制配置"""
+        line = line.strip()
+        if not line or ':' not in line:
+            return
+            
+        parts = line.split(':', 1)
+        if len(parts) != 2:
+            return
+            
+        entity_id = parts[0].strip()
+        limit_str = parts[1].strip()
+        
+        try:
+            limit = int(limit_str)
+            if entity_id and limit > 0:
+                limits_dict[entity_id] = limit
+        except ValueError:
+            logger.warning(f"{limit_type}限制配置格式错误: {line}")
+
+    def _parse_group_modes(self):
+        """解析群组模式配置"""
         group_mode_text = self.config["limits"].get("group_mode_settings", "")
         for line in group_mode_text.strip().split('\n'):
             line = line.strip()
-            if line and ':' in line:
-                parts = line.split(':', 1)
-                if len(parts) == 2:
-                    group_id = parts[0].strip()
-                    mode = parts[1].strip()
-                    if group_id and mode in ["shared", "individual"]:
-                        self.group_modes[group_id] = mode
-                    else:
-                        logger.warning(f"群组模式配置格式错误: {line}")
+            if not line or ':' not in line:
+                continue
+                
+            parts = line.split(':', 1)
+            if len(parts) != 2:
+                continue
+                
+            group_id = parts[0].strip()
+            mode = parts[1].strip()
+            
+            if group_id and mode in ["shared", "individual"]:
+                self.group_modes[group_id] = mode
+            else:
+                logger.warning(f"群组模式配置格式错误: {line}")
 
-        # 解析时间段限制配置（新格式：开始时间-结束时间:限制次数:是否启用）
+    def _parse_time_period_limits(self):
+        """解析时间段限制配置"""
         time_period_text = self.config["limits"].get("time_period_limits", "")
         for line in time_period_text.strip().split('\n'):
-            line = line.strip()
-            if line and ':' in line:
-                # 先按冒号分割
-                parts = line.split(':', 2)
-                if len(parts) >= 2:
-                    time_range = parts[0].strip()
-                    # 检查时间范围格式
-                    if '-' in time_range:
-                        time_parts = time_range.split('-')
-                        if len(time_parts) == 2:
-                            start_time = time_parts[0].strip()
-                            end_time = time_parts[1].strip()
-                            
-                            # 验证时间格式
-                            try:
-                                datetime.datetime.strptime(start_time, "%H:%M")
-                                datetime.datetime.strptime(end_time, "%H:%M")
-                                
-                                # 解析限制次数
-                                try:
-                                    limit = int(parts[1].strip())
-                                    
-                                    # 解析是否启用（默认为True）
-                                    enabled = True
-                                    if len(parts) >= 3:
-                                        enabled_str = parts[2].strip().lower()
-                                        enabled = enabled_str in ['true', '1', 'yes', 'y']
-                                    
-                                    if limit > 0 and enabled:
-                                        self.time_period_limits.append({
-                                            "start_time": start_time,
-                                            "end_time": end_time,
-                                            "limit": limit
-                                        })
-                                except ValueError:
-                                    logger.warning(f"时间段限制次数格式错误: {line}")
-                            except ValueError:
-                                logger.warning(f"时间段限制时间格式错误: {line}")
+            self._parse_time_period_line(line)
 
-        # 加载忽略模式配置
-        self.skip_patterns = self.config["limits"].get("skip_patterns", ["#", "*"])
+    def _parse_time_period_line(self, line):
+        """解析单行时间段限制配置"""
+        line = line.strip()
+        if not line or ':' not in line:
+            return
+            
+        parts = line.split(':', 2)
+        if len(parts) < 2:
+            return
+            
+        time_range = parts[0].strip()
+        if '-' not in time_range:
+            return
+            
+        time_parts = time_range.split('-')
+        if len(time_parts) != 2:
+            return
+            
+        start_time = time_parts[0].strip()
+        end_time = time_parts[1].strip()
         
-        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个忽略模式")
+        # 验证时间格式
+        if not self._validate_time_format(start_time) or not self._validate_time_format(end_time):
+            logger.warning(f"时间段限制时间格式错误: {line}")
+            return
+            
+        # 解析限制次数
+        try:
+            limit = int(parts[1].strip())
+            if limit <= 0:
+                return
+                
+            # 解析是否启用
+            enabled = self._parse_enabled_flag(parts[2] if len(parts) >= 3 else None)
+            
+            if enabled:
+                self.time_period_limits.append({
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "limit": limit
+                })
+        except ValueError:
+            logger.warning(f"时间段限制次数格式错误: {line}")
+
+    def _validate_time_format(self, time_str):
+        """验证时间格式"""
+        try:
+            datetime.datetime.strptime(time_str, "%H:%M")
+            return True
+        except ValueError:
+            return False
+
+    def _parse_enabled_flag(self, enabled_str):
+        """解析启用标志"""
+        if enabled_str is None:
+            return True
+            
+        enabled_str = enabled_str.strip().lower()
+        return enabled_str in ['true', '1', 'yes', 'y']
+
+    def _load_skip_patterns(self):
+        """加载忽略模式配置"""
+        self.skip_patterns = self.config["limits"].get("skip_patterns", ["#", "*"])
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件（新格式：群组ID:限制次数）"""
@@ -589,40 +628,58 @@ class DailyLimitPlugin(star.Star):
         date_str = datetime.datetime.now().strftime("%Y-%m-%d")
         stats_key = self._get_usage_stats_key(date_str)
         
-        # 更新用户统计
-        user_stats_key = f"{stats_key}:user:{user_id}"
-        self.redis.hincrby(user_stats_key, "total_usage", 1)
+        # 收集需要更新的统计键
+        keys_to_update = self._collect_stats_keys(stats_key, user_id, group_id)
         
-        # 更新全局统计
-        global_stats_key = f"{stats_key}:global"
-        self.redis.hincrby(global_stats_key, "total_requests", 1)
+        # 更新所有统计
+        self._update_all_stats(keys_to_update)
         
-        # 需要设置过期时间的键列表
-        keys_to_expire = [user_stats_key, global_stats_key]
-        
-        # 更新群组统计（如果有群组）
-        if group_id:
-            group_stats_key = f"{stats_key}:group:{group_id}"
-            self.redis.hincrby(group_stats_key, "total_usage", 1)
-            
-            # 更新群组用户统计
-            group_user_stats_key = f"{stats_key}:group:{group_id}:user:{user_id}"
-            self.redis.hincrby(group_user_stats_key, "usage_count", 1)
-            
-            # 添加群组相关的键到过期列表
-            keys_to_expire.extend([group_stats_key, group_user_stats_key])
-        
-        # 设置过期时间到明天凌晨
-        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
-        
-        # 为所有统计键设置过期时间
-        for key in keys_to_expire:
-            if self.redis.exists(key):
-                self.redis.expire(key, seconds_until_tomorrow)
+        # 设置过期时间
+        self._set_expiry_for_stats_keys(keys_to_update)
         
         return True
+
+    def _collect_stats_keys(self, stats_key, user_id, group_id):
+        """收集需要更新的统计键"""
+        keys_to_update = {
+            "user_stats": f"{stats_key}:user:{user_id}",
+            "global_stats": f"{stats_key}:global"
+        }
+        
+        if group_id:
+            keys_to_update["group_stats"] = f"{stats_key}:group:{group_id}"
+            keys_to_update["group_user_stats"] = f"{stats_key}:group:{group_id}:user:{user_id}"
+        
+        return keys_to_update
+
+    def _update_all_stats(self, keys_to_update):
+        """更新所有统计信息"""
+        # 更新用户统计
+        self.redis.hincrby(keys_to_update["user_stats"], "total_usage", 1)
+        
+        # 更新全局统计
+        self.redis.hincrby(keys_to_update["global_stats"], "total_requests", 1)
+        
+        # 更新群组统计（如果有）
+        if "group_stats" in keys_to_update:
+            self.redis.hincrby(keys_to_update["group_stats"], "total_usage", 1)
+            self.redis.hincrby(keys_to_update["group_user_stats"], "usage_count", 1)
+
+    def _set_expiry_for_stats_keys(self, keys_to_update):
+        """为统计键设置过期时间"""
+        # 计算到明天凌晨的秒数
+        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
+        
+        # 为所有存在的键设置过期时间
+        for key in keys_to_update.values():
+            if self.redis.exists(key):
+                self.redis.expire(key, seconds_until_tomorrow)
+
+    def _get_seconds_until_tomorrow(self):
+        """获取到明天凌晨的秒数"""
+        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        return int((tomorrow - datetime.datetime.now()).total_seconds())
 
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):

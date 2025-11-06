@@ -110,7 +110,20 @@ class WebServer:
     
     def _setup_routes(self):
         """设置路由"""
+        # 设置认证相关的辅助函数
+        self._setup_auth_helpers()
         
+        # 设置认证路由
+        self._setup_auth_routes()
+        
+        # 设置页面路由
+        self._setup_page_routes()
+        
+        # 设置API路由
+        self._setup_api_routes()
+
+    def _setup_auth_helpers(self):
+        """设置认证相关的辅助函数"""
         def check_auth():
             """检查用户是否已登录"""
             # 如果未设置密码，则无需验证
@@ -129,6 +142,11 @@ class WebServer:
             decorated_function.__name__ = f.__name__
             return decorated_function
         
+        # 将装饰器保存为实例变量，供其他方法使用
+        self.require_auth = require_auth
+
+    def _setup_auth_routes(self):
+        """设置认证路由"""
         @self.app.route('/login', methods=['GET', 'POST'])
         def login():
             """登录页面"""
@@ -153,47 +171,40 @@ class WebServer:
             """登出"""
             session.pop('logged_in', None)
             return redirect(url_for('login'))
-        
+
+    def _setup_page_routes(self):
+        """设置页面路由"""
         @self.app.route('/')
-        @require_auth
+        @self.require_auth
         def index():
             """主页面"""
             return render_template('index.html')
-        
+
+    def _setup_api_routes(self):
+        """设置API路由"""
+        self._setup_stats_api()
+        self._setup_config_api()
+        self._setup_users_api()
+        self._setup_groups_api()
+
+    def _setup_stats_api(self):
+        """设置统计API路由"""
         @self.app.route('/api/stats')
-        @require_auth
+        @self.require_auth
         def get_stats():
             """获取统计信息"""
-            try:
-                stats = self._get_usage_stats()
-                return jsonify({
-                    'success': True,
-                    'data': stats
-                })
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'error': str(e)
-                }), 500
-        
+            return self._handle_api_request(self._get_usage_stats)
+
+    def _setup_config_api(self):
+        """设置配置API路由"""
         @self.app.route('/api/config')
-        @require_auth
+        @self.require_auth
         def get_config():
             """获取配置信息"""
-            try:
-                config_data = self._get_config_data()
-                return jsonify({
-                    'success': True,
-                    'data': config_data
-                })
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'error': str(e)
-                }), 500
+            return self._handle_api_request(self._get_config_data)
         
         @self.app.route('/api/config', methods=['POST'])
-        @require_auth
+        @self.require_auth
         def update_config():
             """更新配置"""
             try:
@@ -208,38 +219,36 @@ class WebServer:
                     'success': False,
                     'error': str(e)
                 }), 500
-        
+
+    def _setup_users_api(self):
+        """设置用户API路由"""
         @self.app.route('/api/users')
-        @require_auth
+        @self.require_auth
         def get_users():
             """获取用户使用情况"""
-            try:
-                users_data = self._get_users_data()
-                return jsonify({
-                    'success': True,
-                    'data': users_data
-                })
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'error': str(e)
-                }), 500
-        
+            return self._handle_api_request(self._get_users_data)
+
+    def _setup_groups_api(self):
+        """设置群组API路由"""
         @self.app.route('/api/groups')
-        @require_auth
+        @self.require_auth
         def get_groups():
             """获取群组使用情况"""
-            try:
-                groups_data = self._get_groups_data()
-                return jsonify({
-                    'success': True,
-                    'data': groups_data
-                })
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'error': str(e)
-                }), 500
+            return self._handle_api_request(self._get_groups_data)
+
+    def _handle_api_request(self, api_function):
+        """处理API请求的通用方法"""
+        try:
+            data = api_function()
+            return jsonify({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
         
 
     
@@ -300,39 +309,61 @@ class WebServer:
             return []
         
         today = datetime.datetime.now().strftime("%Y-%m-%d")
-        # 使用主插件的键格式：astrbot:daily_limit:{today}:{group_id}:{user_id}
-        user_pattern = f"astrbot:daily_limit:{today}:*:*"
-        user_keys = self.plugin.redis.keys(user_pattern)
+        user_keys = self._get_user_keys(today)
         
         users_data = []
         for key in user_keys:
-            # 从key中提取用户ID和群组ID
-            parts = key.split(':')
-            if len(parts) >= 5:
-                user_id = parts[-1]
-                group_id = parts[-2]
-                
-                # 跳过群组键（群组键格式不同）
-                if group_id == 'group':
-                    continue
-                    
-                # 获取使用次数
-                usage = self.plugin.redis.get(key)
-                if not usage:
-                    continue
-                    
-                # 获取用户限制
-                user_limit = self.plugin._get_user_limit(user_id, group_id)
-                
-                users_data.append({
-                    'user_id': user_id,
-                    'group_id': group_id,
-                    'usage_count': int(usage),
-                    'limit': user_limit,
-                    'remaining': max(0, user_limit - int(usage))
-                })
+            user_data = self._parse_user_key_data(key)
+            if user_data:
+                users_data.append(user_data)
         
-        # 按使用量排序
+        return self._sort_users_data(users_data)
+
+    def _get_user_keys(self, date_str):
+        """获取用户相关的Redis键"""
+        user_pattern = f"astrbot:daily_limit:{date_str}:*:*"
+        return self.plugin.redis.keys(user_pattern)
+
+    def _parse_user_key_data(self, key):
+        """解析用户键数据"""
+        # 从key中提取用户ID和群组ID
+        user_id, group_id = self._extract_ids_from_key(key)
+        if not user_id or not group_id:
+            return None
+        
+        # 跳过群组键（群组键格式不同）
+        if group_id == 'group':
+            return None
+        
+        # 获取使用次数
+        usage = self._get_usage_from_key(key)
+        if not usage:
+            return None
+        
+        # 获取用户限制
+        user_limit = self.plugin._get_user_limit(user_id, group_id)
+        
+        return {
+            'user_id': user_id,
+            'group_id': group_id,
+            'usage_count': int(usage),
+            'limit': user_limit,
+            'remaining': max(0, user_limit - int(usage))
+        }
+
+    def _extract_ids_from_key(self, key):
+        """从Redis键中提取用户ID和群组ID"""
+        parts = key.split(':')
+        if len(parts) >= 5:
+            return parts[-1], parts[-2]
+        return None, None
+
+    def _get_usage_from_key(self, key):
+        """从Redis键获取使用次数"""
+        return self.plugin.redis.get(key)
+
+    def _sort_users_data(self, users_data):
+        """对用户数据进行排序"""
         users_data.sort(key=lambda x: x['usage_count'], reverse=True)
         return users_data
     
