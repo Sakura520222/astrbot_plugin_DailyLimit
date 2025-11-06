@@ -35,7 +35,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.6.6",
+    version="v2.6.7",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -70,6 +70,7 @@ class DailyLimitPlugin(star.Star):
         self._parse_group_modes()
         self._parse_time_period_limits()
         self._load_skip_patterns()
+        self._validate_daily_reset_time()
         
         logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个忽略模式")
 
@@ -194,6 +195,27 @@ class DailyLimitPlugin(star.Star):
     def _load_skip_patterns(self):
         """加载忽略模式配置"""
         self.skip_patterns = self.config["limits"].get("skip_patterns", ["#", "*"])
+
+    def _validate_daily_reset_time(self):
+        """验证每日重置时间配置"""
+        reset_time_str = self.config["limits"].get("daily_reset_time", "00:00")
+        
+        # 验证重置时间格式
+        try:
+            reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                raise ValueError("重置时间格式错误")
+            logger.info(f"重置时间配置验证通过: {reset_time_str}")
+        except (ValueError, AttributeError) as e:
+            # 如果配置格式错误，记录警告并使用默认值
+            logger.warning(f"重置时间配置格式错误: {reset_time_str}，错误: {e}，使用默认值00:00")
+            # 自动修复为默认值
+            self.config["limits"]["daily_reset_time"] = "00:00"
+            try:
+                self.config.save_config()
+                logger.info("已自动修复重置时间配置为默认值00:00")
+            except Exception as save_error:
+                logger.error(f"保存重置时间配置失败: {save_error}")
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件（新格式：群组ID:限制次数）"""
@@ -470,10 +492,8 @@ class DailyLimitPlugin(star.Star):
         pipe = self.redis.pipeline()
         pipe.incr(key)
         
-        # 设置过期时间到明天凌晨
-        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        # 设置过期时间到下次重置时间
+        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
         pipe.expire(key, seconds_until_tomorrow)
         
         pipe.execute()
@@ -553,10 +573,8 @@ class DailyLimitPlugin(star.Star):
         pipe = self.redis.pipeline()
         pipe.incr(key)
 
-        # 设置过期时间到明天凌晨
-        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        # 设置过期时间到下次重置时间
+        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
         pipe.expire(key, seconds_until_tomorrow)
 
         pipe.execute()
@@ -580,10 +598,8 @@ class DailyLimitPlugin(star.Star):
         pipe = self.redis.pipeline()
         pipe.incr(key)
 
-        # 设置过期时间到明天凌晨
-        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        # 设置过期时间到下次重置时间
+        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
         pipe.expire(key, seconds_until_tomorrow)
 
         pipe.execute()
@@ -609,10 +625,8 @@ class DailyLimitPlugin(star.Star):
         # 使用Redis列表存储使用记录
         self.redis.rpush(record_key, json.dumps(record_data))
         
-        # 设置过期时间到明天凌晨
-        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        seconds_until_tomorrow = int((tomorrow - datetime.datetime.now()).total_seconds())
+        # 设置过期时间到下次重置时间
+        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
         self.redis.expire(record_key, seconds_until_tomorrow)
         
         # 更新统计信息
@@ -676,10 +690,32 @@ class DailyLimitPlugin(star.Star):
                 self.redis.expire(key, seconds_until_tomorrow)
 
     def _get_seconds_until_tomorrow(self):
-        """获取到明天凌晨的秒数"""
-        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
-        tomorrow = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        return int((tomorrow - datetime.datetime.now()).total_seconds())
+        """获取到下次重置时间的秒数"""
+        # 获取配置的重置时间
+        reset_time_str = self.config["limits"].get("daily_reset_time", "00:00")
+        
+        # 解析重置时间
+        try:
+            reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                raise ValueError("重置时间格式错误")
+        except (ValueError, AttributeError):
+            # 如果配置格式错误，使用默认的00:00
+            reset_hour, reset_minute = 0, 0
+            logger.warning(f"重置时间配置格式错误: {reset_time_str}，使用默认值00:00")
+        
+        now = datetime.datetime.now()
+        
+        # 计算今天的重置时间
+        reset_today = now.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+        
+        # 如果当前时间已经过了今天的重置时间，则计算明天的重置时间
+        if now >= reset_today:
+            reset_time = reset_today + datetime.timedelta(days=1)
+        else:
+            reset_time = reset_today
+        
+        return int((reset_time - now).total_seconds())
 
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
@@ -835,7 +871,20 @@ class DailyLimitPlugin(star.Star):
 
     def _get_reset_time(self):
         """获取每日重置时间"""
-        return "00:00:00"
+        # 获取配置的重置时间
+        reset_time_str = self.config["limits"].get("daily_reset_time", "00:00")
+        
+        # 验证重置时间格式
+        try:
+            reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                raise ValueError("重置时间格式错误")
+            # 返回格式化的重置时间
+            return f"{reset_hour:02d}:{reset_minute:02d}"
+        except (ValueError, AttributeError):
+            # 如果配置格式错误，使用默认的00:00
+            logger.warning(f"重置时间配置格式错误: {reset_time_str}，使用默认值00:00")
+            return "00:00"
 
     def _get_custom_message(self, message_type, default_message, **kwargs):
         """获取自定义消息模板
@@ -1056,7 +1105,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.6 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.6.7 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -1084,6 +1133,11 @@ class DailyLimitPlugin(star.Star):
             "├── /limit timeperiod remove <索引> - 删除时间段限制\n"
             "├── /limit timeperiod enable <索引> - 启用时间段限制\n"
             "└── /limit timeperiod disable <索引> - 禁用时间段限制\n\n"
+            "\n🕐 重置时间管理命令：\n"
+            "├── /limit resettime get - 查看当前重置时间\n"
+            "├── /limit resettime set <时间> - 设置每日重置时间\n"
+            "│   示例：/limit resettime set 06:00 - 设置为早上6点重置\n"
+            "└── /limit resettime reset - 重置为默认时间（00:00）\n"
             "🔧 忽略模式管理命令：\n"
             "├── /limit skip_patterns list - 查看当前忽略模式\n"
             "├── /limit skip_patterns add <模式> - 添加忽略模式\n"
@@ -1115,7 +1169,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.6.6 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.6.7 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -1343,11 +1397,101 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message("无效的命令格式，请使用 /limit skip_patterns 查看帮助"))
 
     @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("resettime")
+    async def limit_resettime(self, event: AstrMessageEvent):
+        """管理每日重置时间配置（仅管理员）"""
+        args = event.message_str.strip().split()
+        
+        # 检查命令格式：/limit resettime [action] [time]
+        if len(args) < 3:
+            # 显示当前重置时间配置和帮助信息
+            current_reset_time = self.config["limits"].get("daily_reset_time", "00:00")
+            
+            help_msg = "🕐 每日重置时间配置管理\n"
+            help_msg += "═══════════════════\n\n"
+            help_msg += f"当前重置时间：{current_reset_time}\n\n"
+            help_msg += "使用方式：\n"
+            help_msg += "/limit resettime get - 查看当前重置时间\n"
+            help_msg += "/limit resettime set <时间> - 设置每日重置时间\n"
+            help_msg += "/limit resettime reset - 重置为默认时间（00:00）\n\n"
+            help_msg += "时间格式说明：\n"
+            help_msg += "• 格式：HH:MM（24小时制）\n"
+            help_msg += "• 示例：/limit resettime set 06:00 - 设置为早上6点重置\n"
+            help_msg += "• 示例：/limit resettime set 23:59 - 设置为晚上11点59分重置\n\n"
+            help_msg += "💡 功能说明：\n"
+            help_msg += "• 每日重置时间决定了使用次数何时清零\n"
+            help_msg += "• 默认重置时间为凌晨00:00\n"
+            help_msg += "• 设置后，所有用户和群组的使用次数将在指定时间重置\n"
+            
+            event.set_result(MessageEventResult().message(help_msg))
+            return
+        
+        action = args[2]
+        
+        if action == "get":
+            # 查看当前重置时间
+            current_reset_time = self.config["limits"].get("daily_reset_time", "00:00")
+            next_reset_time = self._get_reset_time()
+            seconds_until_reset = self._get_seconds_until_tomorrow()
+            
+            # 计算距离下次重置的时间
+            hours_until_reset = seconds_until_reset // 3600
+            minutes_until_reset = (seconds_until_reset % 3600) // 60
+            
+            status_msg = f"🕐 当前重置时间配置\n"
+            status_msg += f"═══════════════════\n\n"
+            status_msg += f"• 当前重置时间：{current_reset_time}\n"
+            status_msg += f"• 下次重置时间：{next_reset_time}\n"
+            status_msg += f"• 距离下次重置：{hours_until_reset}小时{minutes_until_reset}分钟\n"
+            
+            event.set_result(MessageEventResult().message(status_msg))
+            
+        elif action == "set" and len(args) > 3:
+            # 设置重置时间
+            new_time = args[3]
+            
+            # 验证时间格式
+            try:
+                # 使用现有的时间格式验证方法
+                if not self._validate_time_format(new_time):
+                    event.set_result(MessageEventResult().message(f"❌ 时间格式错误：{new_time}\n请使用 HH:MM 格式（24小时制）\n示例：06:00、23:59"))
+                    return
+                
+                # 保存配置
+                self.config["limits"]["daily_reset_time"] = new_time
+                self.config.save_config()
+                
+                # 重新验证配置
+                self._validate_daily_reset_time()
+                
+                event.set_result(MessageEventResult().message(f"✅ 已设置每日重置时间为 {new_time}\n\n下次重置将在 {self._get_reset_time()} 进行"))
+                
+            except Exception as e:
+                logger.error(f"设置重置时间失败: {str(e)}")
+                event.set_result(MessageEventResult().message(f"❌ 设置重置时间失败：{str(e)}"))
+                
+        elif action == "reset":
+            # 重置为默认时间
+            if "daily_reset_time" in self.config["limits"]:
+                del self.config["limits"]["daily_reset_time"]
+                self.config.save_config()
+                
+                # 重新验证配置
+                self._validate_daily_reset_time()
+                
+                event.set_result(MessageEventResult().message("✅ 已重置每日重置时间为默认值 00:00"))
+            else:
+                event.set_result(MessageEventResult().message("✅ 当前已使用默认重置时间 00:00"))
+                
+        else:
+            event.set_result(MessageEventResult().message("❌ 无效的命令格式，请使用 /limit resettime 查看帮助"))
+
+    @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("help")
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.6 - 管理员详细帮助\n"
+            "🚀 日调用限制插件 v2.6.7 - 管理员详细帮助\n"
             "═════════════════════════\n\n"
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
@@ -1374,6 +1518,11 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit timeperiod enable 1 - 启用第1个时间段限制\n"
             "└── /limit timeperiod disable <索引> - 禁用时间段限制\n"
             "    示例：/limit timeperiod disable 1 - 禁用第1个时间段限制\n"
+            "\n🕐 重置时间管理命令：\n"
+            "├── /limit resettime get - 查看当前重置时间\n"
+            "├── /limit resettime set <时间> - 设置每日重置时间\n"
+            "│   示例：/limit resettime set 06:00 - 设置为早上6点重置\n"
+            "└── /limit resettime reset - 重置为默认时间（00:00）\n"
             "\n🔧 忽略模式管理命令：\n"
             "├── /limit skip_patterns list - 查看当前忽略模式\n"
             "├── /limit skip_patterns add <模式> - 添加忽略模式\n"
@@ -1412,6 +1561,7 @@ class DailyLimitPlugin(star.Star):
             "\n💡 功能特性：\n"
             "✅ 智能限制系统：多级权限管理，支持用户、群组、豁免用户三级体系\n"
             "✅ 时间段限制：支持按时间段设置不同的调用限制（优先级最高）\n"
+            "✅ 自定义重置时间：支持设置每日重置时间（默认00:00）\n"
             "✅ 群组协作模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
             "✅ 数据监控分析：实时监控、使用统计、排行榜和状态监控\n"
             "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
@@ -1422,7 +1572,8 @@ class DailyLimitPlugin(star.Star):
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 豁免用户不受任何限制规则约束\n"
             "• 默认忽略模式：#、*（可自定义添加）\n"
-            "\n📝 版本信息：v2.6.6 | 作者：left666 | 改进：Sakura520222\n"
+            "• 重置时间设置后，所有用户和群组的使用次数将在指定时间重置\n"
+            "\n📝 版本信息：v2.6.7 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
