@@ -72,6 +72,12 @@
                     "type": "string"
                 }
             },
+            "daily_reset_time": {
+                "description": "每日重置时间",
+                "type": "string",
+                "default": "00:00",
+                "hint": "设置每日重置时间，格式为HH:MM（24小时制），例如：00:00（午夜）、06:00（早上6点）、12:00（中午12点）。支持通过/limit resettime命令动态管理"
+            },
             "custom_messages": {
                 "description": "自定义提醒消息配置",
                 "type": "object",
@@ -97,19 +103,19 @@
                     "limit_status_private_message": {
                         "description": "私聊中/limit_status命令返回的消息模板",
                         "type": "text",
-                        "default": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        "default": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
                         "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{progress_bar}（进度条）、{usage_tip}（使用提示）、{reset_time}（重置时间）"
                     },
                     "limit_status_group_shared_message": {
                         "description": "群组共享模式中/limit_status命令返回的消息模板",
                         "type": "text",
-                        "default": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        "default": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
                         "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{progress_bar}（进度条）、{usage_tip}（使用提示）、{reset_time}（重置时间）、{limit_type}（限制类型）"
                     },
                     "limit_status_group_individual_message": {
                         "description": "群组独立模式中/limit_status命令返回的消息模板",
                         "type": "text",
-                        "default": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+                        "default": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
                         "hint": "支持变量：{usage}（已使用次数）、{limit}（限制次数）、{remaining}（剩余次数）、{progress_bar}（进度条）、{usage_tip}（使用提示）、{reset_time}（重置时间）、{limit_type}（限制类型）"
                     },
                     "limit_status_exempt_message": {
