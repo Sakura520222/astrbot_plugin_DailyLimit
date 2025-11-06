@@ -1,8 +1,8 @@
-# 🚀 AstrBot 日调用限制插件 v2.6.6
+# 🚀 AstrBot 日调用限制插件 v2.6.8
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.6.6-blue)
+![Version](https://img.shields.io/badge/版本-v2.6.8-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -360,6 +360,13 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 | `/limit custom_messages reset` | 重置为默认消息 | `/limit custom_messages reset` |
 
 ## 🔄 版本更新
+
+### v2.6.8 (2025-11-06)
+
+#### 🔧 代码重构与优化
+- **重构长函数，拆分为更小的职责单一的函数**
+- **优化错误处理机制，减少冗余代码**
+- **改进日志记录，减少重复的日志语句**
 
 ### v2.6.7 (2025-11-06)
 

@@ -4,6 +4,7 @@ import datetime
 import threading
 import sys
 import os
+from typing import Optional  # type: ignore
 import astrbot.api.star as star  # type: ignore
 from astrbot.api.event import (filter,  # type: ignore
                                AstrMessageEvent,
@@ -28,14 +29,14 @@ try:
     from web_server import WebServer
 except ImportError as e:
     WebServer = None
-    logger.warning(f"Web服务器模块导入失败，Web管理界面功能将不可用: {e}")
+    self._log_warning("Web服务器模块导入失败，Web管理界面功能将不可用: {}", e)
 
 
 @star.register(
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.6.7",
+    version="v2.6.8",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -72,7 +73,9 @@ class DailyLimitPlugin(star.Star):
         self._load_skip_patterns()
         self._validate_daily_reset_time()
         
-        logger.info(f"已加载 {len(self.group_limits)} 个群组限制、{len(self.user_limits)} 个用户限制、{len(self.group_modes)} 个群组模式配置、{len(self.time_period_limits)} 个时间段限制和{len(self.skip_patterns)} 个忽略模式")
+        self._log_info("已加载 {} 个群组限制、{} 个用户限制、{} 个群组模式配置、{} 个时间段限制和{} 个忽略模式", 
+                          len(self.group_limits), len(self.user_limits), len(self.group_modes), 
+                          len(self.time_period_limits), len(self.skip_patterns))
 
     def _parse_group_limits(self):
         """解析群组特定限制配置"""
@@ -86,45 +89,88 @@ class DailyLimitPlugin(star.Star):
         for line in user_limits_text.strip().split('\n'):
             self._parse_limit_line(line, self.user_limits, "用户")
 
+    def _parse_config_lines(self, config_text, parser_func):
+        """通用配置行解析器"""
+        if not config_text:
+            return
+        for line in config_text.strip().split('\n'):
+            line = line.strip()
+            if line:
+                parser_func(line)
+
+    def _log_warning(self, message, *args):
+        """统一的警告日志记录"""
+        if args:
+            logger.warning(message.format(*args))
+        else:
+            logger.warning(message)
+
+    def _log_error(self, message, *args):
+        """统一的错误日志记录"""
+        if args:
+            logger.error(message.format(*args))
+        else:
+            logger.error(message)
+
+    def _log_info(self, message, *args):
+        """统一的信息日志记录"""
+        if args:
+            logger.info(message.format(*args))
+        else:
+            logger.info(message)
+
+    def _safe_parse_int(self, value_str, default=None):
+        """安全解析整数，避免重复的异常处理"""
+        try:
+            return int(value_str)
+        except (ValueError, TypeError):
+            return default
+
+    def _validate_config_line(self, line, required_separator=':', min_parts=2):
+        """验证配置行格式"""
+        line = line.strip()
+        if not line or required_separator not in line:
+            return None
+            
+        parts = line.split(required_separator, min_parts - 1)
+        if len(parts) < min_parts:
+            return None
+            
+        return parts
+
     def _parse_limit_line(self, line, limits_dict, limit_type):
         """解析单行限制配置"""
-        line = line.strip()
-        if not line or ':' not in line:
-            return
-            
-        parts = line.split(':', 1)
-        if len(parts) != 2:
+        parts = self._validate_config_line(line)
+        if not parts:
             return
             
         entity_id = parts[0].strip()
         limit_str = parts[1].strip()
         
-        try:
-            limit = int(limit_str)
-            if entity_id and limit > 0:
-                limits_dict[entity_id] = limit
-        except ValueError:
-            logger.warning(f"{limit_type}限制配置格式错误: {line}")
+        limit = self._safe_parse_int(limit_str)
+        if entity_id and limit and limit > 0:
+            limits_dict[entity_id] = limit
+        else:
+            self._log_warning("{}限制配置格式错误: {}", limit_type, line)
 
     def _parse_group_modes(self):
         """解析群组模式配置"""
         group_mode_text = self.config["limits"].get("group_mode_settings", "")
-        for line in group_mode_text.strip().split('\n'):
-            line = line.strip()
-            if not line or ':' not in line:
-                continue
-                
-            parts = line.split(':', 1)
-            if len(parts) != 2:
-                continue
-                
-            group_id = parts[0].strip()
-            mode = parts[1].strip()
+        self._parse_config_lines(group_mode_text, self._parse_group_mode_line)
+
+    def _parse_group_mode_line(self, line):
+        """解析单行群组模式配置"""
+        parts = self._validate_config_line(line)
+        if not parts:
+            return
             
-            if group_id and mode in ["shared", "individual"]:
-                self.group_modes[group_id] = mode
-            else:
-                logger.warning(f"群组模式配置格式错误: {line}")
+        group_id = parts[0].strip()
+        mode = parts[1].strip()
+        
+        if group_id and mode in ["shared", "individual"]:
+            self.group_modes[group_id] = mode
+        else:
+            self._log_warning("群组模式配置格式错误: {}", line)
 
     def _parse_time_period_limits(self):
         """解析时间段限制配置"""
@@ -134,47 +180,69 @@ class DailyLimitPlugin(star.Star):
 
     def _parse_time_period_line(self, line):
         """解析单行时间段限制配置"""
-        line = line.strip()
-        if not line or ':' not in line:
+        # 解析时间范围部分
+        time_range_data = self._parse_time_range_from_line(line)
+        if not time_range_data:
             return
             
-        parts = line.split(':', 2)
-        if len(parts) < 2:
+        # 解析限制次数
+        limit_data = self._parse_limit_from_line(line)
+        if not limit_data:
             return
+            
+        # 解析启用标志
+        enabled = self._parse_enabled_flag_from_line(line)
+        
+        # 如果启用，则添加到限制列表
+        if enabled:
+            self.time_period_limits.append({
+                "start_time": time_range_data["start_time"],
+                "end_time": time_range_data["end_time"],
+                "limit": limit_data
+            })
+    
+    def _parse_time_range_from_line(self, line):
+        """从配置行中解析时间范围"""
+        parts = self._validate_config_line(line, ':', 2)
+        if not parts:
+            return None
             
         time_range = parts[0].strip()
-        if '-' not in time_range:
-            return
-            
-        time_parts = time_range.split('-')
-        if len(time_parts) != 2:
-            return
+        time_parts = self._validate_config_line(time_range, '-', 2)
+        if not time_parts:
+            return None
             
         start_time = time_parts[0].strip()
         end_time = time_parts[1].strip()
         
         # 验证时间格式
         if not self._validate_time_format(start_time) or not self._validate_time_format(end_time):
-            logger.warning(f"时间段限制时间格式错误: {line}")
-            return
+            self._log_warning("时间段限制时间格式错误: {}", line)
+            return None
             
-        # 解析限制次数
-        try:
-            limit = int(parts[1].strip())
-            if limit <= 0:
-                return
-                
-            # 解析是否启用
-            enabled = self._parse_enabled_flag(parts[2] if len(parts) >= 3 else None)
+        return {"start_time": start_time, "end_time": end_time}
+    
+    def _parse_limit_from_line(self, line):
+        """从配置行中解析限制次数"""
+        parts = self._validate_config_line(line, ':', 2)
+        if not parts:
+            return None
             
-            if enabled:
-                self.time_period_limits.append({
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "limit": limit
-                })
-        except ValueError:
-            logger.warning(f"时间段限制次数格式错误: {line}")
+        limit = self._safe_parse_int(parts[1].strip())
+        if limit and limit > 0:
+            return limit
+        else:
+            self._log_warning("时间段限制次数格式错误: {}", line)
+            return None
+    
+    def _parse_enabled_flag_from_line(self, line):
+        """从配置行中解析启用标志"""
+        line = line.strip()
+        parts = line.split(':', 2)
+        
+        if len(parts) >= 3:
+            return self._parse_enabled_flag(parts[2])
+        return True
 
     def _validate_time_format(self, time_str):
         """验证时间格式"""
@@ -205,17 +273,17 @@ class DailyLimitPlugin(star.Star):
             reset_hour, reset_minute = map(int, reset_time_str.split(':'))
             if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
                 raise ValueError("重置时间格式错误")
-            logger.info(f"重置时间配置验证通过: {reset_time_str}")
+            self._log_info("重置时间配置验证通过: {}", reset_time_str)
         except (ValueError, AttributeError) as e:
             # 如果配置格式错误，记录警告并使用默认值
-            logger.warning(f"重置时间配置格式错误: {reset_time_str}，错误: {e}，使用默认值00:00")
+            self._log_warning("重置时间配置格式错误: {}，错误: {}，使用默认值00:00", reset_time_str, e)
             # 自动修复为默认值
             self.config["limits"]["daily_reset_time"] = "00:00"
             try:
                 self.config.save_config()
-                logger.info("已自动修复重置时间配置为默认值00:00")
+                self._log_info("已自动修复重置时间配置为默认值00:00")
             except Exception as save_error:
-                logger.error(f"保存重置时间配置失败: {save_error}")
+                self._log_error("保存重置时间配置失败: {}", save_error)
 
     def _save_group_limit(self, group_id, limit):
         """保存群组特定限制到配置文件（新格式：群组ID:限制次数）"""
@@ -322,15 +390,15 @@ class DailyLimitPlugin(star.Star):
             )
             # 测试连接
             self.redis.ping()
-            logger.info("Redis连接成功")
+            self._log_info("Redis连接成功")
         except Exception as e:
-            logger.error(f"Redis连接失败: {str(e)}")
+            self._log_error("Redis连接失败: {}", str(e))
             self.redis = None
 
     def _init_web_server(self):
         """初始化Web服务器"""
         if WebServer is None:
-            logger.warning("Web服务器模块不可用，跳过Web服务器初始化")
+            self._log_warning("Web服务器模块不可用，跳过Web服务器初始化")
             return
 
         try:
@@ -351,14 +419,14 @@ class DailyLimitPlugin(star.Star):
             # 根据是否有域名显示不同的访问地址
             if domain:
                 access_url = self.web_server.get_access_url()
-                logger.info(f"Web管理界面已启动，访问地址: {access_url}")
+                self._log_info("Web管理界面已启动，访问地址: {}", access_url)
             else:
                 # 使用web_server实例的实际端口，而不是配置中的端口
                 actual_port = self.web_server.port
-                logger.info(f"Web管理界面已启动，访问地址: http://{host}:{actual_port}")
+                self._log_info("Web管理界面已启动，访问地址: http://{}:{}", host, actual_port)
             
         except Exception as e:
-            logger.error(f"Web服务器初始化失败: {str(e)}")
+            self._log_error("Web服务器初始化失败: {}", str(e))
             self.web_server = None
 
 
@@ -421,22 +489,29 @@ class DailyLimitPlugin(star.Star):
         # 默认使用共享模式（保持向后兼容性）
         return "shared"
 
+    def _parse_time_string(self, time_str):
+        """解析时间字符串为时间对象"""
+        try:
+            return datetime.datetime.strptime(time_str, "%H:%M").time()
+        except ValueError:
+            return None
+
     def _is_in_time_period(self, current_time_str, start_time_str, end_time_str):
         """检查当前时间是否在指定时间段内"""
-        try:
-            current_time = datetime.datetime.strptime(current_time_str, "%H:%M").time()
-            start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
-            end_time = datetime.datetime.strptime(end_time_str, "%H:%M").time()
-            
-            # 处理跨天的时间段（如 22:00 - 06:00）
-            if start_time <= end_time:
-                # 不跨天的时间段
-                return start_time <= current_time <= end_time
-            else:
-                # 跨天的时间段
-                return current_time >= start_time or current_time <= end_time
-        except ValueError:
+        current_time = self._parse_time_string(current_time_str)
+        start_time = self._parse_time_string(start_time_str)
+        end_time = self._parse_time_string(end_time_str)
+        
+        if not all([current_time, start_time, end_time]):
             return False
+        
+        # 处理跨天的时间段（如 22:00 - 06:00）
+        if start_time <= end_time:
+            # 不跨天的时间段
+            return start_time <= current_time <= end_time
+        else:
+            # 跨天的时间段
+            return current_time >= start_time or current_time <= end_time
 
     def _get_current_time_period_limit(self):
         """获取当前时间段适用的限制"""
@@ -521,8 +596,8 @@ class DailyLimitPlugin(star.Star):
         # 返回默认限制
         return self.config["limits"]["default_daily_limit"]
 
-    def _get_user_usage(self, user_id, group_id=None):
-        """获取用户已使用次数（兼容旧版本）"""
+    def _get_usage_by_type(self, user_id=None, group_id=None):
+        """通用使用次数获取函数"""
         if not self.redis:
             return 0
 
@@ -530,33 +605,27 @@ class DailyLimitPlugin(star.Star):
         time_period_limit = self._get_current_time_period_limit()
         if time_period_limit is not None:
             # 有时间段限制时，使用时间段内的使用次数
-            time_period_usage = self._get_time_period_usage(user_id, group_id)
-            return time_period_usage
+            return self._get_time_period_usage(user_id, group_id)
 
         # 没有时间段限制时，使用日使用次数
-        key = self._get_user_key(user_id, group_id)
+        if user_id is None:
+            key = self._get_group_key(group_id)
+        else:
+            key = self._get_user_key(user_id, group_id)
+        
         usage = self.redis.get(key)
         return int(usage) if usage else 0
+
+    def _get_user_usage(self, user_id, group_id=None):
+        """获取用户已使用次数（兼容旧版本）"""
+        return self._get_usage_by_type(user_id=user_id, group_id=group_id)
 
     def _get_group_usage(self, group_id):
         """获取群组共享使用次数"""
-        if not self.redis:
-            return 0
+        return self._get_usage_by_type(group_id=group_id)
 
-        # 检查时间段限制（优先级最高）
-        time_period_limit = self._get_current_time_period_limit()
-        if time_period_limit is not None:
-            # 有时间段限制时，使用时间段内的使用次数
-            time_period_usage = self._get_time_period_usage(None, group_id)
-            return time_period_usage
-
-        # 没有时间段限制时，使用日使用次数
-        key = self._get_group_key(group_id)
-        usage = self.redis.get(key)
-        return int(usage) if usage else 0
-
-    def _increment_user_usage(self, user_id, group_id=None):
-        """增加用户使用次数（兼容旧版本）"""
+    def _increment_usage_by_type(self, user_id=None, group_id=None):
+        """通用使用次数增加函数"""
         if not self.redis:
             return False
 
@@ -568,7 +637,11 @@ class DailyLimitPlugin(star.Star):
                 return True
 
         # 没有时间段限制时，增加日使用次数
-        key = self._get_user_key(user_id, group_id)
+        if user_id is None:
+            key = self._get_group_key(group_id)
+        else:
+            key = self._get_user_key(user_id, group_id)
+        
         # 增加计数并设置过期时间
         pipe = self.redis.pipeline()
         pipe.incr(key)
@@ -579,31 +652,14 @@ class DailyLimitPlugin(star.Star):
 
         pipe.execute()
         return True
+
+    def _increment_user_usage(self, user_id, group_id=None):
+        """增加用户使用次数（兼容旧版本）"""
+        return self._increment_usage_by_type(user_id=user_id, group_id=group_id)
 
     def _increment_group_usage(self, group_id):
         """增加群组共享使用次数"""
-        if not self.redis:
-            return False
-
-        # 检查时间段限制（优先级最高）
-        time_period_limit = self._get_current_time_period_limit()
-        if time_period_limit is not None:
-            # 有时间段限制时，增加时间段使用次数
-            if self._increment_time_period_usage(None, group_id):
-                return True
-
-        # 没有时间段限制时，增加日使用次数
-        key = self._get_group_key(group_id)
-        # 增加计数并设置过期时间
-        pipe = self.redis.pipeline()
-        pipe.incr(key)
-
-        # 设置过期时间到下次重置时间
-        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
-        pipe.expire(key, seconds_until_tomorrow)
-
-        pipe.execute()
-        return True
+        return self._increment_usage_by_type(group_id=group_id)
 
     def _record_usage(self, user_id, group_id=None, usage_type="llm_request"):
         """记录使用记录"""
@@ -702,7 +758,7 @@ class DailyLimitPlugin(star.Star):
         except (ValueError, AttributeError):
             # 如果配置格式错误，使用默认的00:00
             reset_hour, reset_minute = 0, 0
-            logger.warning(f"重置时间配置格式错误: {reset_time_str}，使用默认值00:00")
+            self._log_warning("重置时间配置格式错误: {}，使用默认值00:00", reset_time_str)
         
         now = datetime.datetime.now()
         
@@ -717,98 +773,85 @@ class DailyLimitPlugin(star.Star):
         
         return int((reset_time - now).total_seconds())
 
-    @filter.on_llm_request()
-    async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
-        """处理LLM请求事件"""
-        # 检查Redis连接状态，如果未连接则阻止处理
+    def _should_process_request(self, event: AstrMessageEvent, req: ProviderRequest) -> bool:
+        """检查是否应该处理请求"""
         if not self.redis:
-            logger.error("Redis未连接，阻止处理LLM请求")
+            self._log_error("Redis未连接，阻止处理LLM请求")
             event.stop_event()
             return False
         
-        # 检查请求是否有效：空提示或匹配忽略模式的消息不处理
         if not req.prompt.strip() or self._should_skip_message(event.message_str):
             event.stop_event()
             return False
+            
+        return True
 
-        user_id = event.get_sender_id()
+    def _is_exempt_user(self, user_id: int) -> bool:
+        """检查用户是否为豁免用户"""
+        return str(user_id) in self.config["limits"]["exempt_users"]
 
-        if str(user_id) in self.config["limits"]["exempt_users"]:
-            return True  # 豁免用户，允许继续处理
-
-        group_id = None
-        if event.get_message_type() == MessageType.GROUP_MESSAGE:
-            # 获取群组ID和用户ID
-            group_id = event.get_group_id()
-
-        # 检查限制
+    def _get_usage_info(self, user_id: int, group_id: Optional[int]) -> tuple:
+        """获取使用信息（使用次数和限制）"""
         limit = self._get_user_limit(user_id, group_id)
         
-        # 根据群组模式决定使用哪种计数方式
         if group_id is not None:
             group_mode = self._get_group_mode(group_id)
             if group_mode == "shared":
-                # 共享模式：使用群组共享使用次数
                 usage = self._get_group_usage(group_id)
                 usage_type = "群组共享"
             else:
-                # 独立模式：使用用户个人使用次数
                 usage = self._get_user_usage(user_id, group_id)
                 usage_type = "个人独立"
         else:
-            # 私聊消息：使用个人使用次数
             usage = self._get_user_usage(user_id, group_id)
             usage_type = "个人"
+            
+        return usage, limit, usage_type
 
-        # 检查是否超过限制
-        if usage >= limit:
-            logger.info(f"用户 {user_id} 在群 {group_id} 中已达到调用限制 {limit}")
-            if group_id is not None:
-                user_name = event.get_sender_name()
-                group_name = event.get_group_name() or "群组"
-                group_mode = self._get_group_mode(group_id)
-                
-                # 使用自定义消息
-                custom_message = self._get_custom_zero_usage_message(
-                    usage, limit, user_name, group_name, group_mode
-                )
-                
-                await event.send(
-                    MessageChain().at(user_name, user_id).message(custom_message)
-                )
+    async def _handle_limit_exceeded(self, event: AstrMessageEvent, user_id: int, 
+                                   group_id: Optional[int], usage: int, limit: int):
+        """处理超过限制的情况"""
+        self._log_info("用户 {} 在群 {} 中已达到调用限制 {}", user_id, group_id, limit)
+        
+        if group_id is not None:
+            user_name = event.get_sender_name()
+            group_name = event.get_group_name() or "群组"
+            group_mode = self._get_group_mode(group_id)
+            
+            custom_message = self._get_custom_zero_usage_message(
+                usage, limit, user_name, group_name, group_mode
+            )
+            
+            await event.send(
+                MessageChain().at(user_name, user_id).message(custom_message)
+            )
+        else:
+            user_name = event.get_sender_name()
+            custom_message = self._get_custom_zero_usage_message(
+                usage, limit, user_name, None, None
+            )
+            await event.send(MessageChain().message(custom_message))
+            
+        event.stop_event()
+
+    async def _send_reminder(self, event: AstrMessageEvent, user_id: int, 
+                           group_id: Optional[int], remaining: int):
+        """发送剩余次数提醒"""
+        if group_id is not None:
+            user_name = event.get_sender_name()
+            if self._get_group_mode(group_id) == "shared":
+                reminder_msg = f"💡 提醒：本群组剩余AI调用次数为 {remaining} 次"
             else:
-                user_name = event.get_sender_name()
-                
-                # 使用自定义消息
-                custom_message = self._get_custom_zero_usage_message(
-                    usage, limit, user_name, None, None
-                )
-                
-                await event.send(
-                    MessageChain().message(custom_message)
-                )
-            event.stop_event()  # 终止事件传播
-            return False
+                reminder_msg = f"💡 提醒：您在本群组剩余AI调用次数为 {remaining} 次"
+            await event.send(
+                MessageChain().at(user_name, user_id).message(reminder_msg)
+            )
+        else:
+            reminder_msg = f"💡 提醒：您剩余AI调用次数为 {remaining} 次"
+            await event.send(MessageChain().message(reminder_msg))
 
-        # 检查是否需要提醒剩余次数（当剩余次数为1、3、5时提醒）
-        remaining = limit - usage
-        if remaining in [1, 3, 5]:
-            if group_id is not None:
-                user_name = event.get_sender_name()
-                if self._get_group_mode(group_id) == "shared":
-                    reminder_msg = f"💡 提醒：本群组剩余AI调用次数为 {remaining} 次"
-                else:
-                    reminder_msg = f"💡 提醒：您在本群组剩余AI调用次数为 {remaining} 次"
-                await event.send(
-                    MessageChain().at(user_name, user_id).message(reminder_msg)
-                )
-            else:
-                reminder_msg = f"💡 提醒：您剩余AI调用次数为 {remaining} 次"
-                await event.send(
-                    MessageChain().message(reminder_msg)
-                )
-
-        # 增加使用次数
+    def _increment_usage(self, user_id: int, group_id: Optional[int]):
+        """增加使用次数"""
         if group_id is not None:
             group_mode = self._get_group_mode(group_id)
             if group_mode == "shared":
@@ -817,11 +860,43 @@ class DailyLimitPlugin(star.Star):
                 self._increment_user_usage(user_id, group_id)
         else:
             self._increment_user_usage(user_id, group_id)
+
+    @filter.on_llm_request()
+    async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
+        """处理LLM请求事件"""
+        # 基础检查
+        if not self._should_process_request(event, req):
+            return False
+
+        user_id = event.get_sender_id()
         
-        # 记录使用记录
+        # 豁免用户检查
+        if self._is_exempt_user(user_id):
+            return True
+
+        # 获取群组信息
+        group_id = None
+        if event.get_message_type() == MessageType.GROUP_MESSAGE:
+            group_id = event.get_group_id()
+
+        # 获取使用信息
+        usage, limit, usage_type = self._get_usage_info(user_id, group_id)
+
+        # 检查限制
+        if usage >= limit:
+            await self._handle_limit_exceeded(event, user_id, group_id, usage, limit)
+            return False
+
+        # 发送提醒
+        remaining = limit - usage
+        if remaining in [1, 3, 5]:
+            await self._send_reminder(event, user_id, group_id, remaining)
+
+        # 增加使用次数
+        self._increment_usage(user_id, group_id)
         self._record_usage(user_id, group_id, "llm_request")
         
-        return True  # 允许继续处理
+        return True
 
     def _generate_progress_bar(self, usage, limit, bar_length=10):
         """生成进度条"""
@@ -883,7 +958,7 @@ class DailyLimitPlugin(star.Star):
             return f"{reset_hour:02d}:{reset_minute:02d}"
         except (ValueError, AttributeError):
             # 如果配置格式错误，使用默认的00:00
-            logger.warning(f"重置时间配置格式错误: {reset_time_str}，使用默认值00:00")
+            self._log_warning("重置时间配置格式错误: {}，使用默认值00:00", reset_time_str)
             return "00:00"
 
     def _get_custom_message(self, message_type, default_message, **kwargs):
@@ -907,197 +982,174 @@ class DailyLimitPlugin(star.Star):
         try:
             return template.format(**kwargs)
         except KeyError as e:
-            logger.warning(f"消息模板变量错误: {e}，使用默认消息")
+            self._log_warning("消息模板变量错误: {}，使用默认消息", e)
             return default_message.format(**kwargs)
         except Exception as e:
-            logger.error(f"消息模板格式化错误: {e}")
+            self._log_error("消息模板格式化错误: {}", e)
             return default_message
+
+    def _get_usage_tip(self, remaining, limit):
+        """根据剩余次数生成使用提示"""
+        if remaining <= 0:
+            return "⚠️ 今日次数已用完，请明天再试"
+        elif remaining <= limit * 0.2:  # 剩余20%以下
+            return "⚠️ 剩余次数较少，请谨慎使用"
+        elif remaining <= limit * 0.5:  # 剩余50%以下
+            return "💡 剩余次数适中，可继续使用"
+        else:
+            return "✅ 剩余次数充足，可放心使用"
+
+    def _get_limit_type(self, user_id, group_id):
+        """获取限制类型描述"""
+        if str(user_id) in self.user_limits:
+            return "特定限制"
+        elif group_id and str(group_id) in self.group_limits:
+            return "群组限制"
+        else:
+            return "默认限制"
+
+    def _get_current_time_period_info(self, current_time_str):
+        """获取当前时间段信息"""
+        for period in self.time_period_limits:
+            if self._is_in_time_period(current_time_str, period["start_time"], period["end_time"]):
+                return period
+        return None
+
+    def _build_exempt_user_status(self, user_id, group_id, time_period_limit, current_time_str):
+        """构建豁免用户状态消息"""
+        group_context = "在本群组" if group_id is not None else ""
+        
+        status_msg = self._get_custom_message(
+            "limit_status_exempt_message",
+            "🎉 您{group_context}没有调用次数限制（豁免用户）",
+            group_context=group_context
+        )
+        
+        # 添加时间段限制信息（即使豁免用户也显示）
+        if time_period_limit is not None:
+            current_period_info = self._get_current_time_period_info(current_time_str)
+            if current_period_info:
+                time_period_msg = self._get_custom_message(
+                    "limit_status_time_period_message",
+                    "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次",
+                    start_time=current_period_info['start_time'],
+                    end_time=current_period_info['end_time'],
+                    time_period_limit=time_period_limit
+                )
+                status_msg += time_period_msg
+        
+        return status_msg
+
+    def _build_shared_group_status(self, user_id, group_id, limit, reset_time):
+        """构建群组共享模式状态消息"""
+        usage = self._get_group_usage(group_id)
+        remaining = limit - usage
+        progress_bar = self._generate_progress_bar(usage, limit)
+        usage_tip = self._get_usage_tip(remaining, limit)
+        limit_type = "特定限制" if str(group_id) in self.group_limits else "默认限制"
+        
+        return self._get_custom_message(
+            "limit_status_group_shared_message",
+            "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            limit_type=limit_type,
+            usage=usage,
+            limit=limit,
+            progress_bar=progress_bar,
+            remaining=remaining,
+            usage_tip=usage_tip,
+            reset_time=reset_time
+        )
+
+    def _build_individual_group_status(self, user_id, group_id, limit, reset_time):
+        """构建群组独立模式状态消息"""
+        usage = self._get_user_usage(user_id, group_id)
+        remaining = limit - usage
+        progress_bar = self._generate_progress_bar(usage, limit)
+        usage_tip = self._get_usage_tip(remaining, limit)
+        limit_type = self._get_limit_type(user_id, group_id)
+        
+        return self._get_custom_message(
+            "limit_status_group_individual_message",
+            "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            limit_type=limit_type,
+            usage=usage,
+            limit=limit,
+            progress_bar=progress_bar,
+            remaining=remaining,
+            usage_tip=usage_tip,
+            reset_time=reset_time
+        )
+
+    def _build_private_status(self, user_id, group_id, limit, reset_time):
+        """构建私聊状态消息"""
+        usage = self._get_user_usage(user_id, group_id)
+        remaining = limit - usage
+        progress_bar = self._generate_progress_bar(usage, limit)
+        usage_tip = self._get_usage_tip(remaining, limit)
+        
+        return self._get_custom_message(
+            "limit_status_private_message",
+            "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            usage=usage,
+            limit=limit,
+            progress_bar=progress_bar,
+            remaining=remaining,
+            usage_tip=usage_tip,
+            reset_time=reset_time
+        )
+
+    def _add_time_period_info(self, status_msg, user_id, group_id, time_period_limit, current_time_str):
+        """添加时间段限制信息到状态消息"""
+        if time_period_limit is not None:
+            current_period_info = self._get_current_time_period_info(current_time_str)
+            if current_period_info:
+                time_period_usage = self._get_time_period_usage(user_id, group_id)
+                time_period_remaining = time_period_limit - time_period_usage
+                time_period_progress = self._generate_progress_bar(time_period_usage, time_period_limit)
+                
+                time_period_msg = self._get_custom_message(
+                    "limit_status_time_period_message",
+                    "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次",
+                    start_time=current_period_info['start_time'],
+                    end_time=current_period_info['end_time'],
+                    time_period_limit=time_period_limit,
+                    time_period_usage=time_period_usage,
+                    time_period_progress=time_period_progress,
+                    time_period_remaining=time_period_remaining
+                )
+                status_msg += time_period_msg
+        
+        return status_msg
 
     @filter.command("limit_status")
     async def limit_status(self, event: AstrMessageEvent):
         """用户查看当前使用状态"""
         user_id = event.get_sender_id()
-        group_id = None
-        if event.get_message_type() == MessageType.GROUP_MESSAGE:
-            group_id = event.get_group_id()
+        group_id = event.get_group_id() if event.get_message_type() == MessageType.GROUP_MESSAGE else None
 
         # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
-        
-        # 检查当前是否处于时间段限制中
         time_period_limit = self._get_current_time_period_limit()
         current_time_str = datetime.datetime.now().strftime("%H:%M")
         
         # 首先检查用户是否被豁免（优先级最高）
         if str(user_id) in self.config["limits"]["exempt_users"]:
-            # 用户被豁免，显示个人豁免状态
-            group_context = "在本群组" if group_id is not None else ""
-            
-            # 使用自定义消息模板
-            status_msg = self._get_custom_message(
-                "limit_status_exempt_message",
-                "🎉 您{group_context}没有调用次数限制（豁免用户）",
-                group_context=group_context
-            )
-            
-            # 添加时间段限制信息（即使豁免用户也显示）
-            if time_period_limit is not None:
-                # 查找当前时间段的具体信息
-                current_period_info = None
-                for period in self.time_period_limits:
-                    if self._is_in_time_period(current_time_str, period["start_time"], period["end_time"]):
-                        current_period_info = period
-                        break
-                
-                if current_period_info:
-                    # 使用自定义消息模板
-                    time_period_msg = self._get_custom_message(
-                        "limit_status_time_period_message",
-                        "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次",
-                        start_time=current_period_info['start_time'],
-                        end_time=current_period_info['end_time'],
-                        time_period_limit=time_period_limit
-                    )
-                    status_msg += time_period_msg
+            status_msg = self._build_exempt_user_status(user_id, group_id, time_period_limit, current_time_str)
         else:
-            # 根据剩余次数生成使用提示
-            usage = self._get_user_usage(user_id, group_id)
-            remaining = limit - usage
-            
-            # 生成进度条
-            progress_bar = self._generate_progress_bar(usage, limit)
-            
-            # 生成使用提示
-            if remaining <= 0:
-                usage_tip = "⚠️ 今日次数已用完，请明天再试"
-            elif remaining <= limit * 0.2:  # 剩余20%以下
-                usage_tip = "⚠️ 剩余次数较少，请谨慎使用"
-            elif remaining <= limit * 0.5:  # 剩余50%以下
-                usage_tip = "💡 剩余次数适中，可继续使用"
-            else:
-                usage_tip = "✅ 剩余次数充足，可放心使用"
-            
-            # 重置时间
             reset_time = self._get_reset_time()
             
             # 根据群组模式显示正确的状态信息
             if group_id is not None:
                 group_mode = self._get_group_mode(group_id)
                 if group_mode == "shared":
-                    # 共享模式：显示群组共享状态
-                    usage = self._get_group_usage(group_id)
-                    remaining = limit - usage
-                    
-                    # 重新生成进度条和使用提示
-                    progress_bar = self._generate_progress_bar(usage, limit)
-                    
-                    if remaining <= 0:
-                        usage_tip = "⚠️ 今日次数已用完，请明天再试"
-                    elif remaining <= limit * 0.2:
-                        usage_tip = "⚠️ 剩余次数较少，请谨慎使用"
-                    elif remaining <= limit * 0.5:
-                        usage_tip = "💡 剩余次数适中，可继续使用"
-                    else:
-                        usage_tip = "✅ 剩余次数充足，可放心使用"
-                    
-                    # 确定限制类型
-                    limit_type = "特定限制" if str(group_id) in self.group_limits else "默认限制"
-                    
-                    # 使用自定义消息模板
-                    status_msg = self._get_custom_message(
-                        "limit_status_group_shared_message",
-                        "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-                        limit_type=limit_type,
-                        usage=usage,
-                        limit=limit,
-                        progress_bar=progress_bar,
-                        remaining=remaining,
-                        usage_tip=usage_tip,
-                        reset_time=reset_time
-                    )
+                    status_msg = self._build_shared_group_status(user_id, group_id, limit, reset_time)
                 else:
-                    # 独立模式：显示用户个人状态
-                    usage = self._get_user_usage(user_id, group_id)
-                    remaining = limit - usage
-                    
-                    # 重新生成进度条和使用提示
-                    progress_bar = self._generate_progress_bar(usage, limit)
-                    
-                    if remaining <= 0:
-                        usage_tip = "⚠️ 今日次数已用完，请明天再试"
-                    elif remaining <= limit * 0.2:
-                        usage_tip = "⚠️ 剩余次数较少，请谨慎使用"
-                    elif remaining <= limit * 0.5:
-                        usage_tip = "💡 剩余次数适中，可继续使用"
-                    else:
-                        usage_tip = "✅ 剩余次数充足，可放心使用"
-                    
-                    # 确定限制类型
-                    if str(user_id) in self.user_limits:
-                        limit_type = "特定限制"
-                    elif str(group_id) in self.group_limits:
-                        limit_type = "群组限制"
-                    else:
-                        limit_type = "默认限制"
-                    
-                    # 使用自定义消息模板
-                    status_msg = self._get_custom_message(
-                        "limit_status_group_individual_message",
-                        "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-                        limit_type=limit_type,
-                        usage=usage,
-                        limit=limit,
-                        progress_bar=progress_bar,
-                        remaining=remaining,
-                        usage_tip=usage_tip,
-                        reset_time=reset_time
-                    )
+                    status_msg = self._build_individual_group_status(user_id, group_id, limit, reset_time)
             else:
-                # 私聊消息：显示个人状态
-                usage = self._get_user_usage(user_id, group_id)
-                remaining = limit - usage
-                
-                # 使用自定义消息模板
-                status_msg = self._get_custom_message(
-                    "limit_status_private_message",
-                    "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-                    usage=usage,
-                    limit=limit,
-                    progress_bar=progress_bar,
-                    remaining=remaining,
-                    usage_tip=usage_tip,
-                    reset_time=reset_time
-                )
+                status_msg = self._build_private_status(user_id, group_id, limit, reset_time)
             
             # 添加时间段限制信息
-            if time_period_limit is not None:
-                # 查找当前时间段的具体信息
-                current_period_info = None
-                for period in self.time_period_limits:
-                    if self._is_in_time_period(current_time_str, period["start_time"], period["end_time"]):
-                        current_period_info = period
-                        break
-                
-                if current_period_info:
-                    # 显示时间段内的使用情况
-                    time_period_usage = self._get_time_period_usage(user_id, group_id)
-                    time_period_remaining = time_period_limit - time_period_usage
-                    
-                    # 生成时间段进度条
-                    time_period_progress = self._generate_progress_bar(time_period_usage, time_period_limit)
-                    
-                    # 使用自定义消息模板
-                    time_period_msg = self._get_custom_message(
-                        "limit_status_time_period_message",
-                        "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次",
-                        start_time=current_period_info['start_time'],
-                        end_time=current_period_info['end_time'],
-                        time_period_limit=time_period_limit,
-                        time_period_usage=time_period_usage,
-                        time_period_progress=time_period_progress,
-                        time_period_remaining=time_period_remaining
-                    )
-                    status_msg += time_period_msg
+            status_msg = self._add_time_period_info(status_msg, user_id, group_id, time_period_limit, current_time_str)
 
         event.set_result(MessageEventResult().message(status_msg))
 
@@ -1105,7 +1157,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.7 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.6.8 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -1169,7 +1221,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.6.7 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.6.8 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -1467,7 +1519,7 @@ class DailyLimitPlugin(star.Star):
                 event.set_result(MessageEventResult().message(f"✅ 已设置每日重置时间为 {new_time}\n\n下次重置将在 {self._get_reset_time()} 进行"))
                 
             except Exception as e:
-                logger.error(f"设置重置时间失败: {str(e)}")
+                self._log_error("设置重置时间失败: {}", str(e))
                 event.set_result(MessageEventResult().message(f"❌ 设置重置时间失败：{str(e)}"))
                 
         elif action == "reset":
@@ -1491,7 +1543,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.7 - 管理员详细帮助\n"
+            "🚀 日调用限制插件 v2.6.8 - 管理员详细帮助\n"
             "═════════════════════════\n\n"
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
@@ -1573,7 +1625,7 @@ class DailyLimitPlugin(star.Star):
             "• 豁免用户不受任何限制规则约束\n"
             "• 默认忽略模式：#、*（可自定义添加）\n"
             "• 重置时间设置后，所有用户和群组的使用次数将在指定时间重置\n"
-            "\n📝 版本信息：v2.6.7 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.6.8 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -1761,7 +1813,7 @@ class DailyLimitPlugin(star.Star):
             
             event.set_result(MessageEventResult().message(stats_msg))
         except Exception as e:
-            logger.error(f"获取统计信息失败: {str(e)}")
+            self._log_error("获取统计信息失败: {}", str(e))
             event.set_result(MessageEventResult().message("获取统计信息失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -1835,7 +1887,7 @@ class DailyLimitPlugin(star.Star):
                 event.set_result(MessageEventResult().message(history_msg))
                 
         except Exception as e:
-            logger.error(f"查询历史记录失败: {str(e)}")
+            self._log_error("查询历史记录失败: {}", str(e))
             event.set_result(MessageEventResult().message("查询历史记录失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -1929,7 +1981,7 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message(analytics_msg))
             
         except Exception as e:
-            logger.error(f"获取分析数据失败: {str(e)}")
+            self._log_error("获取分析数据失败: {}", str(e))
             event.set_result(MessageEventResult().message("获取分析数据失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -1995,7 +2047,7 @@ class DailyLimitPlugin(star.Star):
             await event.send(MessageChain().message(status_msg))
             
         except Exception as e:
-            logger.error(f"检查插件状态失败: {str(e)}")
+            self._log_error("检查插件状态失败: {}", str(e))
             await event.send(MessageChain().message("❌ 检查插件状态失败"))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -2032,7 +2084,7 @@ class DailyLimitPlugin(star.Star):
             await event.send(MessageChain().message(domain_msg))
             
         except Exception as e:
-            logger.error(f"获取域名配置失败: {str(e)}")
+            self._log_error("获取域名配置失败: {}", str(e))
             await event.send(MessageChain().message("❌ 获取域名配置失败，请检查配置文件"))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -2136,7 +2188,7 @@ class DailyLimitPlugin(star.Star):
             await event.send(MessageChain().message(leaderboard_msg))
 
         except Exception as e:
-            logger.error(f"获取排行榜失败: {str(e)}")
+            self._log_error("获取排行榜失败: {}", str(e))
             await event.send(MessageChain().message("❌ 获取排行榜失败，请稍后重试"))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -2240,7 +2292,7 @@ class DailyLimitPlugin(star.Star):
                 event.set_result(MessageEventResult().message(f"✅ 已重置用户 {user_id} 的使用次数，共清理 {deleted_count} 条记录"))
                 
         except Exception as e:
-            logger.error(f"重置使用次数失败: {str(e)}")
+            self._log_error("重置使用次数失败: {}", str(e))
             event.set_result(MessageEventResult().message("重置使用次数失败，请检查Redis连接"))
 
     async def terminate(self):
@@ -2248,29 +2300,29 @@ class DailyLimitPlugin(star.Star):
         # 停止Web服务器
         if self.web_server:
             try:
-                logger.info("正在停止Web服务器...")
+                self._log_info("正在停止Web服务器...")
                 self.web_server.stop()
-                logger.info("Web服务器已停止")
+                self._log_info("Web服务器已停止")
             except Exception as e:
-                logger.error(f"停止Web服务器失败: {str(e)}")
+                self._log_error("停止Web服务器失败: {}", str(e))
         
         # 清理Web服务器线程
         if self.web_server_thread and self.web_server_thread.is_alive():
             try:
-                logger.info("等待Web服务器线程结束...")
+                self._log_info("等待Web服务器线程结束...")
                 self.web_server_thread.join(timeout=3)  # 最多等待3秒
                 if self.web_server_thread.is_alive():
-                    logger.warning("Web服务器线程未在3秒内结束")
+                    self._log_warning("Web服务器线程未在3秒内结束")
                 else:
-                    logger.info("Web服务器线程已结束")
+                    self._log_info("Web服务器线程已结束")
             except Exception as e:
-                logger.error(f"等待Web服务器线程结束时出错: {str(e)}")
+                self._log_error("等待Web服务器线程结束时出错: {}", str(e))
         
         # 清理Web服务器实例
         self.web_server = None
         self.web_server_thread = None
         
-        logger.info("日调用限制插件已终止")
+        self._log_info("日调用限制插件已终止")
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("timeperiod", "list")
@@ -2409,6 +2461,6 @@ class DailyLimitPlugin(star.Star):
             self.config["limits"]["time_period_limits"] = '\n'.join(lines)
             # 保存到配置文件
             self.config.save_config()
-            logger.info(f"已保存时间段限制配置，共 {len(self.time_period_limits)} 个时间段")
+            self._log_info("已保存时间段限制配置，共 {} 个时间段", len(self.time_period_limits))
         except Exception as e:
-            logger.error(f"保存时间段限制配置失败: {str(e)}")
+            self._log_error("保存时间段限制配置失败: {}", str(e))
