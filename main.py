@@ -3104,6 +3104,7 @@ class DailyLimitPlugin(star.Star):
                 return
             
             self.last_checked_version = version_info["version"]
+            self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
             current_version = self.config.get("version", "v2.7.0")
@@ -3248,17 +3249,19 @@ class DailyLimitPlugin(star.Star):
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
+                    update_content = self.last_checked_version_info.get("content", "暂无更新说明") if hasattr(self, 'last_checked_version_info') else "暂无更新说明"
                     event.set_result(MessageEventResult().message(
                         f"AstrBot-日限制插件 Limit\n\n🎉 检测到新版本可用！\n"
                         f"📦 当前版本：{current_version}\n"
                         f"🆕 最新版本：{self.last_checked_version}\n"
+                        f"📝 更新内容：{update_content}\n"
                         f"🔗 下载地址：https://github.com/left666/astrbot_plugin_daily_limit"
                     ))
                 else:
                     # 已是最新版本
                     event.set_result(MessageEventResult().message(
                         f"✅ 当前已是最新版本：{current_version}\n"
-                        f"📅 最后检查时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"📅 最后检查时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     ))
             else:
                 # 检查失败
