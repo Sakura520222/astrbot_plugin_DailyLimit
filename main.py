@@ -1,5 +1,6 @@
 import json
 import redis
+import redis.exceptions
 import datetime
 import threading
 import sys
@@ -36,7 +37,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.6.8",
+    version="v2.6.9",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -65,7 +66,20 @@ class DailyLimitPlugin(star.Star):
         self._init_web_server()
 
     def _load_limits_from_config(self):
-        """从配置文件加载群组和用户特定限制"""
+        """
+        从配置文件加载群组和用户特定限制
+        
+        从插件的配置文件中加载所有限制相关设置，包括：
+        - 群组限制配置
+        - 用户限制配置  
+        - 群组模式配置
+        - 时间段限制配置
+        - 忽略模式配置
+        - 每日重置时间验证
+        
+        返回：
+            bool: 加载成功返回True，失败返回False
+        """
         self._parse_group_limits()
         self._parse_user_limits()
         self._parse_group_modes()
@@ -77,17 +91,26 @@ class DailyLimitPlugin(star.Star):
                           len(self.group_limits), len(self.user_limits), len(self.group_modes), 
                           len(self.time_period_limits), len(self.skip_patterns))
 
+    def _parse_limits_config(self, config_key: str, limits_dict: dict, limit_type: str) -> None:
+        """
+        通用限制配置解析方法
+        
+        Args:
+            config_key: 配置键名
+            limits_dict: 目标限制字典
+            limit_type: 限制类型描述
+        """
+        config_text = self.config["limits"].get(config_key, "")
+        for line in config_text.strip().split('\n'):
+            self._parse_limit_line(line, limits_dict, limit_type)
+
     def _parse_group_limits(self):
         """解析群组特定限制配置"""
-        group_limits_text = self.config["limits"].get("group_limits", "")
-        for line in group_limits_text.strip().split('\n'):
-            self._parse_limit_line(line, self.group_limits, "群组")
+        self._parse_limits_config("group_limits", self.group_limits, "群组")
 
     def _parse_user_limits(self):
         """解析用户特定限制配置"""
-        user_limits_text = self.config["limits"].get("user_limits", "")
-        for line in user_limits_text.strip().split('\n'):
-            self._parse_limit_line(line, self.user_limits, "用户")
+        self._parse_limits_config("user_limits", self.user_limits, "用户")
 
     def _parse_config_lines(self, config_text, parser_func):
         """通用配置行解析器"""
@@ -98,26 +121,213 @@ class DailyLimitPlugin(star.Star):
             if line:
                 parser_func(line)
 
-    def _log_warning(self, message, *args):
-        """统一的警告日志记录"""
+    def _log(self, level: str, message: str, *args) -> None:
+        """
+        统一的日志记录方法
+        
+        Args:
+            level: 日志级别 ('info', 'warning', 'error')
+            message: 日志消息模板
+            *args: 格式化参数
+        """
+        log_func = getattr(logger, level, logger.info)
         if args:
-            logger.warning(message.format(*args))
+            log_func(message.format(*args))
         else:
-            logger.warning(message)
+            log_func(message)
+
+    def _log_warning(self, message, *args):
+        """警告日志记录"""
+        self._log('warning', message, *args)
 
     def _log_error(self, message, *args):
-        """统一的错误日志记录"""
-        if args:
-            logger.error(message.format(*args))
-        else:
-            logger.error(message)
+        """错误日志记录"""
+        self._log('error', message, *args)
 
     def _log_info(self, message, *args):
-        """统一的信息日志记录"""
-        if args:
-            logger.info(message.format(*args))
-        else:
-            logger.info(message)
+        """信息日志记录"""
+        self._log('info', message, *args)
+
+    def _handle_error(self, error: Exception, context: str = "", user_message: str = None) -> None:
+        """
+        统一的错误处理方法
+        
+        提供统一的错误处理机制，包括：
+        - 错误日志记录
+        - 错误上下文追踪
+        - 详细错误信息记录（包含堆栈跟踪）
+        
+        参数：
+            error: 异常对象
+            context: 错误上下文描述
+            user_message: 返回给用户的友好错误消息（可选）
+        """
+        error_context = f"{context}: " if context else ""
+        self._log_error("{}发生错误: {}", error_context, str(error))
+        
+        # 记录详细的错误信息用于调试
+        if hasattr(error, '__traceback__'):
+            import traceback
+            error_details = traceback.format_exc()
+            self._log_error("{}详细错误信息:\n{}", error_context, error_details)
+
+    def _safe_execute(self, func, *args, context: str = "", default_return=None, **kwargs):
+        """
+        安全执行函数，捕获异常并记录
+        
+        Args:
+            func: 要执行的函数
+            *args: 函数参数
+            context: 执行上下文描述
+            default_return: 异常时的默认返回值
+            **kwargs: 函数关键字参数
+            
+        Returns:
+            函数执行结果或默认返回值
+        """
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            self._handle_error(e, context)
+            return default_return
+
+    def _validate_redis_connection(self) -> bool:
+        """
+        验证Redis连接状态
+        
+        检查Redis连接是否可用，包括连接状态和响应能力。
+        
+        返回：
+            bool: Redis连接是否可用
+        """
+        if not self.redis:
+            self._log_error("Redis连接未初始化")
+            return False
+        
+        try:
+            # 检查连接是否已关闭
+            if hasattr(self.redis, 'connection_pool') and self.redis.connection_pool:
+                # 检查连接池状态
+                connection = self.redis.connection_pool.get_connection('ping')
+                if not connection.is_connected:
+                    self._log_warning("Redis连接已断开，尝试重新连接")
+                    connection.connect()
+            
+            # 发送ping命令验证连接
+            response = self.redis.ping()
+            if response != True:
+                self._log_warning("Redis ping响应异常: {}", response)
+                return False
+                
+            return True
+            
+        except redis.exceptions.ConnectionError as e:
+            self._log_error("Redis连接错误: {}", str(e))
+            return False
+        except redis.exceptions.TimeoutError as e:
+            self._log_error("Redis连接超时: {}", str(e))
+            return False
+        except Exception as e:
+            self._handle_error(e, "Redis连接验证")
+            return False
+    
+    def get_redis_status(self):
+        """
+        获取Redis连接状态信息
+        
+        返回：
+            dict: Redis连接状态信息字典
+        """
+        if not self.redis:
+            return {
+                "connected": False,
+                "status": "未初始化",
+                "error": "Redis连接未初始化"
+            }
+        
+        try:
+            # 检查连接状态
+            response = self.redis.ping()
+            
+            # 获取Redis服务器信息
+            info = self.redis.info()
+            
+            return {
+                "connected": True,
+                "status": "正常",
+                "response_time": "正常",
+                "server_version": info.get("redis_version", "未知"),
+                "used_memory": info.get("used_memory_human", "未知"),
+                "connected_clients": info.get("connected_clients", 0)
+            }
+            
+        except Exception as e:
+            return {
+                "connected": False,
+                "status": "异常",
+                "error": str(e)
+            }
+    
+    def _reconnect_redis(self):
+        """
+        重新连接Redis
+        
+        当Redis连接断开时，尝试重新建立连接。
+        
+        返回：
+            bool: 重连成功返回True，失败返回False
+        """
+        if not self.redis:
+            self._log_error("Redis连接未初始化，无法重连")
+            return False
+        
+        try:
+            # 关闭现有连接
+            if hasattr(self.redis, 'connection_pool') and self.redis.connection_pool:
+                self.redis.connection_pool.disconnect()
+            
+            # 重新连接
+            self.redis.connection_pool.reset()
+            
+            # 验证新连接
+            if self._validate_redis_connection():
+                self._log_info("Redis重连成功")
+                return True
+            else:
+                self._log_error("Redis重连失败")
+                return False
+                
+        except Exception as e:
+            self._log_error("Redis重连过程中出错: {}", str(e))
+            return False
+
+    def _validate_config_structure(self) -> bool:
+        """
+        验证配置结构完整性
+        
+        Returns:
+            bool: 配置结构是否完整
+        """
+        required_sections = ["limits", "redis"]
+        required_limits_fields = ["default_daily_limit", "exempt_users", "group_limits", "user_limits"]
+        
+        try:
+            # 检查必需配置段
+            for section in required_sections:
+                if section not in self.config:
+                    self._log_error("配置缺少必需段: {}", section)
+                    return False
+            
+            # 检查limits段必需字段
+            for field in required_limits_fields:
+                if field not in self.config["limits"]:
+                    self._log_error("limits配置缺少必需字段: {}", field)
+                    return False
+            
+            return True
+        except Exception as e:
+            self._handle_error(e, "配置结构验证")
+            return False
 
     def _safe_parse_int(self, value_str, default=None):
         """安全解析整数，避免重复的异常处理"""
@@ -396,38 +606,113 @@ class DailyLimitPlugin(star.Star):
             self.redis = None
 
     def _init_web_server(self):
-        """初始化Web服务器"""
+        """
+        初始化Web服务器
+        
+        创建并启动Web服务器实例，提供状态管理和错误处理。
+        
+        返回：
+            bool: 初始化成功返回True，失败返回False
+        """
         if WebServer is None:
             self._log_warning("Web服务器模块不可用，跳过Web服务器初始化")
-            return
+            return False
 
         try:
-            # 获取Web服务器配置
-            web_config = self.config.get("web_server", {})
-            host = web_config.get("host", "127.0.0.1")
-            port = web_config.get("port", 8080)
-            debug = web_config.get("debug", False)
-            domain = web_config.get("domain", "")
-
-            # 创建Web服务器实例
-            self.web_server = WebServer(self, host=host, port=port, domain=domain)
+            # 检查Web服务器是否已经在运行
+            if self._is_web_server_running():
+                self._log_info("Web服务器已经在运行中")
+                return True
             
-            # 启动Web服务器线程
-            self.web_server_thread = threading.Thread(target=self.web_server.start_async, daemon=True)
-            self.web_server_thread.start()
+            # 获取Web服务器配置并创建实例
+            self.web_server = self._create_web_server_instance()
             
-            # 根据是否有域名显示不同的访问地址
-            if domain:
-                access_url = self.web_server.get_access_url()
-                self._log_info("Web管理界面已启动，访问地址: {}", access_url)
+            # 启动Web服务器
+            success = self._start_web_server()
+            
+            if success:
+                self._handle_web_server_start_success()
             else:
-                # 使用web_server实例的实际端口，而不是配置中的端口
-                actual_port = self.web_server.port
-                self._log_info("Web管理界面已启动，访问地址: http://{}:{}", host, actual_port)
+                self._handle_web_server_start_failure()
+            
+            return success
             
         except Exception as e:
-            self._log_error("Web服务器初始化失败: {}", str(e))
-            self.web_server = None
+            self._handle_web_server_init_error(e)
+            return False
+
+    def _create_web_server_instance(self):
+        """创建Web服务器实例"""
+        web_config = self.config.get("web_server", {})
+        host = web_config.get("host", "127.0.0.1")
+        port = web_config.get("port", 8080)
+        domain = web_config.get("domain", "")
+        
+        return WebServer(self, host=host, port=port, domain=domain)
+
+    def _start_web_server(self):
+        """启动Web服务器"""
+        return self.web_server.start_async()
+
+    def _handle_web_server_start_success(self):
+        """处理Web服务器启动成功的情况"""
+        # 更新线程引用
+        self.web_server_thread = self.web_server._server_thread
+        
+        # 记录访问地址
+        self._log_web_server_access_url()
+        
+        # 记录服务器状态
+        self._log_info("Web服务器状态: {}", self.get_web_server_status())
+
+    def _log_web_server_access_url(self):
+        """记录Web服务器访问地址"""
+        web_config = self.config.get("web_server", {})
+        domain = web_config.get("domain", "")
+        
+        if domain:
+            access_url = self.web_server.get_access_url()
+            self._log_info("Web管理界面已启动，访问地址: {}", access_url)
+        else:
+            actual_port = self.web_server.port
+            host = web_config.get("host", "127.0.0.1")
+            self._log_info("Web管理界面已启动，访问地址: http://{}:{}", host, actual_port)
+
+    def _handle_web_server_start_failure(self):
+        """处理Web服务器启动失败的情况"""
+        error_msg = "Web服务器启动失败"
+        if self.web_server._last_error:
+            error_msg += f": {self.web_server._last_error}"
+        self._log_error(error_msg)
+        self.web_server = None
+
+    def _handle_web_server_init_error(self, error):
+        """处理Web服务器初始化错误"""
+        error_msg = f"Web服务器初始化失败: {str(error)}"
+        self._log_error(error_msg)
+        self.web_server = None
+    
+    def _is_web_server_running(self):
+        """
+        检查Web服务器是否正在运行
+        
+        返回：
+            bool: Web服务器是否正在运行
+        """
+        if hasattr(self, 'web_server') and self.web_server:
+            return self.web_server.is_running()
+        return False
+    
+    def get_web_server_status(self):
+        """
+        获取Web服务器状态信息
+        
+        返回：
+            dict: Web服务器状态信息字典，如果未启动则返回None
+        """
+        if hasattr(self, 'web_server') and self.web_server:
+            return self.web_server.get_status()
+        return None
 
 
 
@@ -601,20 +886,24 @@ class DailyLimitPlugin(star.Star):
         if not self.redis:
             return 0
 
-        # 检查时间段限制（优先级最高）
-        time_period_limit = self._get_current_time_period_limit()
-        if time_period_limit is not None:
-            # 有时间段限制时，使用时间段内的使用次数
-            return self._get_time_period_usage(user_id, group_id)
+        try:
+            # 检查时间段限制（优先级最高）
+            time_period_limit = self._get_current_time_period_limit()
+            if time_period_limit is not None:
+                # 有时间段限制时，使用时间段内的使用次数
+                return self._get_time_period_usage(user_id, group_id)
 
-        # 没有时间段限制时，使用日使用次数
-        if user_id is None:
-            key = self._get_group_key(group_id)
-        else:
-            key = self._get_user_key(user_id, group_id)
-        
-        usage = self.redis.get(key)
-        return int(usage) if usage else 0
+            # 没有时间段限制时，使用日使用次数
+            if user_id is None:
+                key = self._get_group_key(group_id)
+            else:
+                key = self._get_user_key(user_id, group_id)
+            
+            usage = self.redis.get(key)
+            return int(usage) if usage else 0
+        except Exception as e:
+            self._log_error("获取使用次数失败 (用户: {}, 群组: {}): {}", user_id, group_id, str(e))
+            return 0
 
     def _get_user_usage(self, user_id, group_id=None):
         """获取用户已使用次数（兼容旧版本）"""
@@ -629,29 +918,33 @@ class DailyLimitPlugin(star.Star):
         if not self.redis:
             return False
 
-        # 检查时间段限制（优先级最高）
-        time_period_limit = self._get_current_time_period_limit()
-        if time_period_limit is not None:
-            # 有时间段限制时，增加时间段使用次数
-            if self._increment_time_period_usage(user_id, group_id):
-                return True
+        try:
+            # 检查时间段限制（优先级最高）
+            time_period_limit = self._get_current_time_period_limit()
+            if time_period_limit is not None:
+                # 有时间段限制时，增加时间段使用次数
+                if self._increment_time_period_usage(user_id, group_id):
+                    return True
 
-        # 没有时间段限制时，增加日使用次数
-        if user_id is None:
-            key = self._get_group_key(group_id)
-        else:
-            key = self._get_user_key(user_id, group_id)
-        
-        # 增加计数并设置过期时间
-        pipe = self.redis.pipeline()
-        pipe.incr(key)
+            # 没有时间段限制时，增加日使用次数
+            if user_id is None:
+                key = self._get_group_key(group_id)
+            else:
+                key = self._get_user_key(user_id, group_id)
+            
+            # 增加计数并设置过期时间
+            pipe = self.redis.pipeline()
+            pipe.incr(key)
 
-        # 设置过期时间到下次重置时间
-        seconds_until_tomorrow = self._get_seconds_until_tomorrow()
-        pipe.expire(key, seconds_until_tomorrow)
+            # 设置过期时间到下次重置时间
+            seconds_until_tomorrow = self._get_seconds_until_tomorrow()
+            pipe.expire(key, seconds_until_tomorrow)
 
-        pipe.execute()
-        return True
+            pipe.execute()
+            return True
+        except Exception as e:
+            self._log_error("增加使用次数失败 (用户: {}, 群组: {}): {}", user_id, group_id, str(e))
+            return False
 
     def _increment_user_usage(self, user_id, group_id=None):
         """增加用户使用次数（兼容旧版本）"""
@@ -662,52 +955,102 @@ class DailyLimitPlugin(star.Star):
         return self._increment_usage_by_type(group_id=group_id)
 
     def _record_usage(self, user_id, group_id=None, usage_type="llm_request"):
-        """记录使用记录"""
+        """
+        记录使用情况
+        
+        记录用户或群组的使用情况到Redis中，包括：
+        - 使用记录（按日期和时间）
+        - 使用统计更新
+        - 过期时间设置
+        
+        参数：
+            user_id: 用户ID
+            group_id: 群组ID（可选）
+            usage_type: 使用类型，默认为"llm_request"
+            
+        返回：
+            bool: 记录成功返回True，失败返回False
+        """
         if not self.redis:
             return False
             
+        try:
+            # 记录详细使用信息
+            self._record_usage_details(user_id, group_id, usage_type)
+            
+            # 更新统计信息
+            self._update_usage_stats(user_id, group_id)
+            
+            return True
+        except Exception as e:
+            self._log_error("记录使用记录失败 (用户: {}, 群组: {}): {}", user_id, group_id, str(e))
+            return False
+
+    def _record_usage_details(self, user_id, group_id, usage_type):
+        """记录详细使用信息"""
         timestamp = datetime.datetime.now().isoformat()
         record_key = self._get_usage_record_key(user_id, group_id)
         
-        # 记录详细使用信息
-        record_data = {
+        # 创建使用记录数据
+        record_data = self._create_usage_record_data(user_id, group_id, usage_type, timestamp)
+        
+        # 使用Redis列表存储使用记录
+        self.redis.rpush(record_key, json.dumps(record_data))
+        
+        # 设置过期时间到下次重置时间
+        self._set_usage_record_expiry(record_key)
+
+    def _create_usage_record_data(self, user_id, group_id, usage_type, timestamp):
+        """创建使用记录数据"""
+        return {
             "timestamp": timestamp,
             "user_id": user_id,
             "group_id": group_id,
             "usage_type": usage_type,
             "date": datetime.datetime.now().strftime("%Y-%m-%d")
         }
-        
-        # 使用Redis列表存储使用记录
-        self.redis.rpush(record_key, json.dumps(record_data))
-        
-        # 设置过期时间到下次重置时间
+
+    def _set_usage_record_expiry(self, record_key):
+        """设置使用记录过期时间"""
         seconds_until_tomorrow = self._get_seconds_until_tomorrow()
         self.redis.expire(record_key, seconds_until_tomorrow)
-        
-        # 更新统计信息
-        self._update_usage_stats(user_id, group_id)
-        
-        return True
 
     def _update_usage_stats(self, user_id, group_id=None):
-        """更新使用统计信息"""
+        """
+        更新使用统计信息
+        
+        更新用户和群组的使用统计信息，包括：
+        - 活跃用户统计
+        - 活跃群组统计  
+        - 总请求数统计
+        
+        参数：
+            user_id: 用户ID
+            group_id: 群组ID（可选）
+            
+        返回：
+            bool: 更新成功返回True，失败返回False
+        """
         if not self.redis:
             return False
             
-        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-        stats_key = self._get_usage_stats_key(date_str)
-        
-        # 收集需要更新的统计键
-        keys_to_update = self._collect_stats_keys(stats_key, user_id, group_id)
-        
-        # 更新所有统计
-        self._update_all_stats(keys_to_update)
-        
-        # 设置过期时间
-        self._set_expiry_for_stats_keys(keys_to_update)
-        
-        return True
+        try:
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            stats_key = self._get_usage_stats_key(date_str)
+            
+            # 收集需要更新的统计键
+            keys_to_update = self._collect_stats_keys(stats_key, user_id, group_id)
+            
+            # 更新所有统计
+            self._update_all_stats(keys_to_update)
+            
+            # 设置过期时间
+            self._set_expiry_for_stats_keys(keys_to_update)
+            
+            return True
+        except Exception as e:
+            self._log_error("更新使用统计失败 (用户: {}, 群组: {}): {}", user_id, group_id, str(e))
+            return False
 
     def _collect_stats_keys(self, stats_key, user_id, group_id):
         """收集需要更新的统计键"""
@@ -775,8 +1118,7 @@ class DailyLimitPlugin(star.Star):
 
     def _should_process_request(self, event: AstrMessageEvent, req: ProviderRequest) -> bool:
         """检查是否应该处理请求"""
-        if not self.redis:
-            self._log_error("Redis未连接，阻止处理LLM请求")
+        if not self._validate_redis_connection():
             event.stop_event()
             return False
         
@@ -791,7 +1133,21 @@ class DailyLimitPlugin(star.Star):
         return str(user_id) in self.config["limits"]["exempt_users"]
 
     def _get_usage_info(self, user_id: int, group_id: Optional[int]) -> tuple:
-        """获取使用信息（使用次数和限制）"""
+        """
+        获取使用信息（使用次数和限制）
+        
+        根据用户ID和群组ID获取当前的使用情况信息，包括：
+        - 当前使用次数
+        - 限制次数
+        - 使用类型（个人/群组共享/个人独立）
+        
+        参数：
+            user_id: 用户ID
+            group_id: 群组ID（可选）
+            
+        返回：
+            tuple: (使用次数, 限制次数, 使用类型描述)
+        """
         limit = self._get_user_limit(user_id, group_id)
         
         if group_id is not None:
@@ -851,7 +1207,18 @@ class DailyLimitPlugin(star.Star):
             await event.send(MessageChain().message(reminder_msg))
 
     def _increment_usage(self, user_id: int, group_id: Optional[int]):
-        """增加使用次数"""
+        """
+        增加使用次数
+        
+        根据群组模式智能增加使用次数：
+        - 共享模式：增加群组使用次数
+        - 独立模式：增加用户在该群组的使用次数
+        - 私聊：增加用户个人使用次数
+        
+        参数：
+            user_id: 用户ID
+            group_id: 群组ID（可选，为None时表示私聊）
+        """
         if group_id is not None:
             group_mode = self._get_group_mode(group_id)
             if group_mode == "shared":
@@ -863,7 +1230,23 @@ class DailyLimitPlugin(star.Star):
 
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
-        """处理LLM请求事件"""
+        """
+        处理LLM请求事件
+        
+        这是插件的核心事件处理函数，负责：
+        - 验证请求是否应该处理
+        - 检查用户权限和限制
+        - 记录使用情况
+        - 处理超过限制的情况
+        - 发送提醒消息
+        
+        参数：
+            event: AstrMessageEvent对象，包含消息事件信息
+            req: ProviderRequest对象，包含LLM请求信息
+            
+        返回：
+            bool: 是否允许继续处理请求
+        """
         # 基础检查
         if not self._should_process_request(event, req):
             return False
@@ -1157,7 +1540,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.6.8 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.6.9 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -1221,7 +1604,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.6.8 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.6.9 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -1232,6 +1615,154 @@ class DailyLimitPlugin(star.Star):
         """限制命令组"""
         pass
 
+    def _get_default_messages(self) -> dict:
+        """获取默认消息配置"""
+        return {
+            "zero_usage_message": "您的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+            "zero_usage_group_shared_message": "本群组AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+            "zero_usage_group_individual_message": "您在本群组的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
+            "limit_status_private_message": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "limit_status_group_shared_message": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "limit_status_group_individual_message": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "limit_status_exempt_message": "🎉 您{group_context}没有调用次数限制（豁免用户）",
+            "limit_status_time_period_message": "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次"
+        }
+
+    def _get_valid_message_types(self) -> list:
+        """获取有效的消息类型列表"""
+        return [
+            "zero_usage_message", "zero_usage_group_shared_message", "zero_usage_group_individual_message",
+            "limit_status_private_message", "limit_status_group_shared_message", "limit_status_group_individual_message",
+            "limit_status_exempt_message", "limit_status_time_period_message"
+        ]
+
+    def _validate_message_content(self, msg_type: str, msg_content: str) -> bool:
+        """验证消息内容格式"""
+        if msg_type.startswith("zero_usage") and ("{usage}" not in msg_content or "{limit}" not in msg_content):
+            return False
+        return True
+
+    async def _handle_messages_help(self, event: AstrMessageEvent) -> None:
+        """处理消息配置帮助命令"""
+        custom_messages = self.config["limits"].get("custom_messages", {})
+        
+        help_msg = "📝 自定义提醒消息配置\n"
+        help_msg += "═══════════════════\n\n"
+        
+        # 显示当前配置
+        if custom_messages:
+            help_msg += "当前配置：\n"
+            for msg_type, msg_content in custom_messages.items():
+                help_msg += f"• {msg_type}: {msg_content}\n"
+            help_msg += "\n"
+        else:
+            help_msg += "当前使用默认消息配置\n\n"
+        
+        help_msg += "使用方式：\n"
+        help_msg += "/limit messages list - 查看当前消息配置\n"
+        help_msg += "/limit messages set <类型> <消息内容> - 设置自定义消息\n"
+        help_msg += "/limit messages reset <类型> - 重置指定类型的消息为默认值\n"
+        help_msg += "/limit messages reset_all - 重置所有消息为默认值\n\n"
+        
+        help_msg += "可用消息类型：\n"
+        help_msg += "• zero_usage_message - 私聊使用次数为0时的消息\n"
+        help_msg += "• zero_usage_group_shared_message - 群组共享模式使用次数为0时的消息\n"
+        help_msg += "• zero_usage_group_individual_message - 群组独立模式使用次数为0时的消息\n"
+        help_msg += "• limit_status_private_message - /limit_status 私聊状态消息\n"
+        help_msg += "• limit_status_group_shared_message - /limit_status 群组共享模式状态消息\n"
+        help_msg += "• limit_status_group_individual_message - /limit_status 群组独立模式状态消息\n"
+        help_msg += "• limit_status_exempt_message - /limit_status 豁免用户状态消息\n"
+        help_msg += "• limit_status_time_period_message - /limit_status 时间段限制状态消息\n\n"
+        
+        help_msg += "支持变量：\n"
+        help_msg += "• {usage} - 已使用次数\n"
+        help_msg += "• {limit} - 限制次数\n"
+        help_msg += "• {remaining} - 剩余次数\n"
+        help_msg += "• {user_name} - 用户名\n"
+        help_msg += "• {group_name} - 群组名\n"
+        help_msg += "• {progress_bar} - 进度条\n"
+        help_msg += "• {usage_tip} - 使用提示\n"
+        help_msg += "• {reset_time} - 重置时间\n"
+        help_msg += "• {limit_type} - 限制类型（特定/默认/群组）\n"
+        help_msg += "• {group_context} - 群组上下文\n"
+        help_msg += "• {start_time} - 时间段开始时间\n"
+        help_msg += "• {end_time} - 时间段结束时间\n"
+        help_msg += "• {time_period_limit} - 时间段限制次数\n"
+        help_msg += "• {time_period_usage} - 时间段内已使用次数\n"
+        help_msg += "• {time_period_progress} - 时间段进度条\n"
+        help_msg += "• {time_period_remaining} - 时间段内剩余次数"
+        
+        event.set_result(MessageEventResult().message(help_msg))
+
+    async def _handle_messages_list(self, event: AstrMessageEvent) -> None:
+        """处理消息列表命令"""
+        custom_messages = self.config["limits"].get("custom_messages", {})
+        
+        if not custom_messages:
+            event.set_result(MessageEventResult().message("当前使用默认消息配置"))
+            return
+        
+        msg_list = "📝 当前自定义消息配置：\n"
+        msg_list += "═══════════════════\n\n"
+        
+        for msg_type, msg_content in custom_messages.items():
+            msg_list += f"🔹 {msg_type}:\n"
+            msg_list += f"   {msg_content}\n\n"
+        
+        event.set_result(MessageEventResult().message(msg_list))
+
+    async def _handle_messages_set(self, event: AstrMessageEvent, args: list) -> None:
+        """处理消息设置命令"""
+        msg_type = args[3]
+        msg_content = " ".join(args[4:])
+        
+        valid_types = self._get_valid_message_types()
+        if msg_type not in valid_types:
+            event.set_result(MessageEventResult().message(f"无效的消息类型，可用类型：{', '.join(valid_types)}"))
+            return
+        
+        if not self._validate_message_content(msg_type, msg_content):
+            event.set_result(MessageEventResult().message("zero_usage消息类型必须包含 {usage} 和 {limit} 变量"))
+            return
+        
+        # 保存自定义消息配置
+        if "custom_messages" not in self.config["limits"]:
+            self.config["limits"]["custom_messages"] = {}
+        
+        self.config["limits"]["custom_messages"][msg_type] = msg_content
+        self.config.save_config()
+        
+        event.set_result(MessageEventResult().message(f"✅ 已设置 {msg_type} 的自定义消息\n\n新消息内容：\n{msg_content}"))
+
+    async def _handle_messages_reset(self, event: AstrMessageEvent, args: list) -> None:
+        """处理消息重置命令"""
+        msg_type = args[3]
+        
+        valid_types = self._get_valid_message_types()
+        if msg_type not in valid_types:
+            event.set_result(MessageEventResult().message(f"无效的消息类型，可用类型：{', '.join(valid_types)}"))
+            return
+        
+        default_messages = self._get_default_messages()
+        
+        # 如果存在自定义配置，则删除该类型
+        if "custom_messages" in self.config["limits"] and msg_type in self.config["limits"]["custom_messages"]:
+            del self.config["limits"]["custom_messages"][msg_type]
+            # 如果自定义配置为空，则删除整个配置节
+            if not self.config["limits"]["custom_messages"]:
+                del self.config["limits"]["custom_messages"]
+            self.config.save_config()
+        
+        event.set_result(MessageEventResult().message(f"✅ 已重置 {msg_type} 为默认消息\n\n默认消息内容：\n{default_messages[msg_type]}"))
+
+    async def _handle_messages_reset_all(self, event: AstrMessageEvent) -> None:
+        """处理重置所有消息命令"""
+        if "custom_messages" in self.config["limits"]:
+            del self.config["limits"]["custom_messages"]
+            self.config.save_config()
+        
+        event.set_result(MessageEventResult().message("✅ 已重置所有消息为默认值"))
+
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("messages")
     async def limit_messages(self, event: AstrMessageEvent):
@@ -1240,150 +1771,19 @@ class DailyLimitPlugin(star.Star):
         
         # 检查命令格式：/limit messages [action] [type] [message]
         if len(args) < 3:
-            # 显示当前自定义消息配置和帮助信息
-            custom_messages = self.config["limits"].get("custom_messages", {})
-            
-            help_msg = "📝 自定义提醒消息配置\n"
-            help_msg += "═══════════════════\n\n"
-            
-            # 显示当前配置
-            if custom_messages:
-                help_msg += "当前配置：\n"
-                for msg_type, msg_content in custom_messages.items():
-                    help_msg += f"• {msg_type}: {msg_content}\n"
-                help_msg += "\n"
-            else:
-                help_msg += "当前使用默认消息配置\n\n"
-            
-            help_msg += "使用方式：\n"
-            help_msg += "/limit messages list - 查看当前消息配置\n"
-            help_msg += "/limit messages set <类型> <消息内容> - 设置自定义消息\n"
-            help_msg += "/limit messages reset <类型> - 重置指定类型的消息为默认值\n"
-            help_msg += "/limit messages reset_all - 重置所有消息为默认值\n\n"
-            
-            help_msg += "可用消息类型：\n"
-            help_msg += "• zero_usage_message - 私聊使用次数为0时的消息\n"
-            help_msg += "• zero_usage_group_shared_message - 群组共享模式使用次数为0时的消息\n"
-            help_msg += "• zero_usage_group_individual_message - 群组独立模式使用次数为0时的消息\n"
-            help_msg += "• limit_status_private_message - /limit_status 私聊状态消息\n"
-            help_msg += "• limit_status_group_shared_message - /limit_status 群组共享模式状态消息\n"
-            help_msg += "• limit_status_group_individual_message - /limit_status 群组独立模式状态消息\n"
-            help_msg += "• limit_status_exempt_message - /limit_status 豁免用户状态消息\n"
-            help_msg += "• limit_status_time_period_message - /limit_status 时间段限制状态消息\n\n"
-            
-            help_msg += "支持变量：\n"
-            help_msg += "• {usage} - 已使用次数\n"
-            help_msg += "• {limit} - 限制次数\n"
-            help_msg += "• {remaining} - 剩余次数\n"
-            help_msg += "• {user_name} - 用户名\n"
-            help_msg += "• {group_name} - 群组名\n"
-            help_msg += "• {progress_bar} - 进度条\n"
-            help_msg += "• {usage_tip} - 使用提示\n"
-            help_msg += "• {reset_time} - 重置时间\n"
-            help_msg += "• {limit_type} - 限制类型（特定/默认/群组）\n"
-            help_msg += "• {group_context} - 群组上下文\n"
-            help_msg += "• {start_time} - 时间段开始时间\n"
-            help_msg += "• {end_time} - 时间段结束时间\n"
-            help_msg += "• {time_period_limit} - 时间段限制次数\n"
-            help_msg += "• {time_period_usage} - 时间段内已使用次数\n"
-            help_msg += "• {time_period_progress} - 时间段进度条\n"
-            help_msg += "• {time_period_remaining} - 时间段内剩余次数"
-            
-            event.set_result(MessageEventResult().message(help_msg))
+            await self._handle_messages_help(event)
             return
         
         action = args[2]
         
         if action == "list":
-            # 显示当前自定义消息配置
-            custom_messages = self.config["limits"].get("custom_messages", {})
-            
-            if not custom_messages:
-                event.set_result(MessageEventResult().message("当前使用默认消息配置"))
-                return
-            
-            msg_list = "📝 当前自定义消息配置：\n"
-            msg_list += "═══════════════════\n\n"
-            
-            for msg_type, msg_content in custom_messages.items():
-                msg_list += f"🔹 {msg_type}:\n"
-                msg_list += f"   {msg_content}\n\n"
-            
-            event.set_result(MessageEventResult().message(msg_list))
-            
+            await self._handle_messages_list(event)
         elif action == "set" and len(args) > 4:
-            # 设置自定义消息
-            msg_type = args[3]
-            msg_content = " ".join(args[4:])
-            
-            # 验证消息类型
-            valid_types = [
-                "zero_usage_message", "zero_usage_group_shared_message", "zero_usage_group_individual_message",
-                "limit_status_private_message", "limit_status_group_shared_message", "limit_status_group_individual_message",
-                "limit_status_exempt_message", "limit_status_time_period_message"
-            ]
-            if msg_type not in valid_types:
-                event.set_result(MessageEventResult().message(f"无效的消息类型，可用类型：{', '.join(valid_types)}"))
-                return
-            
-            # 验证消息内容是否包含必要变量（仅对zero_usage消息类型要求）
-            if msg_type.startswith("zero_usage") and ("{usage}" not in msg_content or "{limit}" not in msg_content):
-                event.set_result(MessageEventResult().message("zero_usage消息类型必须包含 {usage} 和 {limit} 变量"))
-                return
-            
-            # 保存自定义消息配置
-            if "custom_messages" not in self.config["limits"]:
-                self.config["limits"]["custom_messages"] = {}
-            
-            self.config["limits"]["custom_messages"][msg_type] = msg_content
-            self.config.save_config()
-            
-            event.set_result(MessageEventResult().message(f"✅ 已设置 {msg_type} 的自定义消息\n\n新消息内容：\n{msg_content}"))
-            
+            await self._handle_messages_set(event, args)
         elif action == "reset" and len(args) > 3:
-            # 重置指定类型的消息为默认值
-            msg_type = args[3]
-            
-            # 验证消息类型
-            valid_types = [
-                "zero_usage_message", "zero_usage_group_shared_message", "zero_usage_group_individual_message",
-                "limit_status_private_message", "limit_status_group_shared_message", "limit_status_group_individual_message",
-                "limit_status_exempt_message", "limit_status_time_period_message"
-            ]
-            if msg_type not in valid_types:
-                event.set_result(MessageEventResult().message(f"无效的消息类型，可用类型：{', '.join(valid_types)}"))
-                return
-            
-            # 设置默认消息
-            default_messages = {
-                "zero_usage_message": "您的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
-                "zero_usage_group_shared_message": "本群组AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
-                "zero_usage_group_individual_message": "您在本群组的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
-                "limit_status_private_message": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-                "limit_status_group_shared_message": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-                "limit_status_group_individual_message": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-                "limit_status_exempt_message": "🎉 您{group_context}没有调用次数限制（豁免用户）",
-                "limit_status_time_period_message": "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次"
-            }
-            
-            # 如果存在自定义配置，则删除该类型
-            if "custom_messages" in self.config["limits"] and msg_type in self.config["limits"]["custom_messages"]:
-                del self.config["limits"]["custom_messages"][msg_type]
-                # 如果自定义配置为空，则删除整个配置节
-                if not self.config["limits"]["custom_messages"]:
-                    del self.config["limits"]["custom_messages"]
-                self.config.save_config()
-            
-            event.set_result(MessageEventResult().message(f"✅ 已重置 {msg_type} 为默认消息\n\n默认消息内容：\n{default_messages[msg_type]}"))
-            
+            await self._handle_messages_reset(event, args)
         elif action == "reset_all":
-            # 重置所有消息为默认值
-            if "custom_messages" in self.config["limits"]:
-                del self.config["limits"]["custom_messages"]
-                self.config.save_config()
-            
-            event.set_result(MessageEventResult().message("✅ 已重置所有消息为默认值"))
-            
+            await self._handle_messages_reset_all(event)
         else:
             event.set_result(MessageEventResult().message("无效的命令格式，请使用 /limit messages 查看帮助"))
 
@@ -1540,11 +1940,9 @@ class DailyLimitPlugin(star.Star):
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("help")
-    async def limit_help(self, event: AstrMessageEvent):
-        """显示详细帮助信息（仅管理员）"""
-        help_msg = (
-            "🚀 日调用限制插件 v2.6.8 - 管理员详细帮助\n"
-            "═════════════════════════\n\n"
+    def _build_basic_management_help(self) -> str:
+        """构建基础管理命令帮助信息"""
+        return (
             "📋 基础管理命令：\n"
             "├── /limit help - 显示此帮助信息\n"
             "├── /limit set <用户ID> <次数> - 设置特定用户的每日限制次数\n"
@@ -1560,6 +1958,11 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit unexempt 123456 - 取消用户123456的豁免\n"
             "├── /limit list_user - 列出所有用户特定限制\n"
             "└── /limit list_group - 列出所有群组特定限制\n"
+        )
+
+    def _build_time_period_help(self) -> str:
+        """构建时间段限制命令帮助信息"""
+        return (
             "\n⏰ 时间段限制命令：\n"
             "├── /limit timeperiod list - 列出所有时间段限制配置\n"
             "├── /limit timeperiod add <开始时间> <结束时间> <限制次数> - 添加时间段限制\n"
@@ -1570,11 +1973,21 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit timeperiod enable 1 - 启用第1个时间段限制\n"
             "└── /limit timeperiod disable <索引> - 禁用时间段限制\n"
             "    示例：/limit timeperiod disable 1 - 禁用第1个时间段限制\n"
+        )
+
+    def _build_reset_time_help(self) -> str:
+        """构建重置时间管理命令帮助信息"""
+        return (
             "\n🕐 重置时间管理命令：\n"
             "├── /limit resettime get - 查看当前重置时间\n"
             "├── /limit resettime set <时间> - 设置每日重置时间\n"
             "│   示例：/limit resettime set 06:00 - 设置为早上6点重置\n"
             "└── /limit resettime reset - 重置为默认时间（00:00）\n"
+        )
+
+    def _build_skip_patterns_help(self) -> str:
+        """构建忽略模式管理命令帮助信息"""
+        return (
             "\n🔧 忽略模式管理命令：\n"
             "├── /limit skip_patterns list - 查看当前忽略模式\n"
             "├── /limit skip_patterns add <模式> - 添加忽略模式\n"
@@ -1583,6 +1996,11 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit skip_patterns remove # - 移除#忽略模式\n"
             "└── /limit skip_patterns reset - 重置为默认模式\n"
             "    示例：/limit skip_patterns reset - 重置为默认模式[@所有人, #]\n"
+        )
+
+    def _build_query_stats_help(self) -> str:
+        """构建查询统计命令帮助信息"""
+        return (
             "\n📊 查询统计命令：\n"
             "├── /limit stats - 查看今日使用统计信息\n"
             "├── /limit history [用户ID] [天数] - 查询使用历史记录\n"
@@ -1593,23 +2011,43 @@ class DailyLimitPlugin(star.Star):
             "│   示例：/limit top 10 - 查看今日使用次数前10名\n"
             "├── /limit status - 检查插件状态和健康状态\n"
             "└── /limit domain - 查看Web管理界面域名配置和访问地址\n"
+        )
+
+    def _build_reset_commands_help(self) -> str:
+        """构建重置命令帮助信息"""
+        return (
             "\n🔄 重置命令：\n"
             "├── /limit reset all - 重置所有使用记录（包括个人和群组）\n"
             "├── /limit reset <用户ID> - 重置特定用户的使用次数\n"
             "│   示例：/limit reset 123456 - 重置用户123456的使用次数\n"
             "└── /limit reset group <群组ID> - 重置特定群组的使用次数\n"
             "    示例：/limit reset group 789012 - 重置群组789012的使用次数\n"
+        )
+
+    def _build_priority_rules_help(self) -> str:
+        """构建优先级规则帮助信息"""
+        return (
             "\n🎯 优先级规则（从高到低）：\n"
             "1️⃣ ⏰ 时间段限制 - 优先级最高（特定时间段内的限制）\n"
             "2️⃣ 🏆 豁免用户 - 完全不受限制（白名单用户）\n"
             "3️⃣ 👤 用户特定限制 - 针对单个用户的个性化设置\n"
             "4️⃣ 👥 群组特定限制 - 针对整个群组的统一设置\n"
             "5️⃣ ⚙️ 默认限制 - 全局默认设置（兜底规则）\n"
+        )
+
+    def _build_usage_modes_help(self) -> str:
+        """构建使用模式说明帮助信息"""
+        return (
             "\n📊 使用模式说明：\n"
             "• 🔄 共享模式：群组内所有成员共享使用次数（默认模式）\n"
             "   └── 适合小型团队协作，统一管理使用次数\n"
             "• 👤 独立模式：群组内每个成员有独立的使用次数\n"
             "   └── 适合大型团队，成员间互不影响\n"
+        )
+
+    def _build_features_help(self) -> str:
+        """构建功能特性帮助信息"""
+        return (
             "\n💡 功能特性：\n"
             "✅ 智能限制系统：多级权限管理，支持用户、群组、豁免用户三级体系\n"
             "✅ 时间段限制：支持按时间段设置不同的调用限制（优先级最高）\n"
@@ -1619,16 +2057,44 @@ class DailyLimitPlugin(star.Star):
             "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
             "✅ 自定义忽略模式：可配置需要忽略处理的消息前缀\n"
             "✅ 智能提醒：剩余次数提醒和使用状态监控\n"
+        )
+
+    def _build_usage_tips_help(self) -> str:
+        """构建使用提示帮助信息"""
+        return (
             "\n📝 使用提示：\n"
             "• 所有命令都需要管理员权限才能使用\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 豁免用户不受任何限制规则约束\n"
             "• 默认忽略模式：#、*（可自定义添加）\n"
             "• 重置时间设置后，所有用户和群组的使用次数将在指定时间重置\n"
-            "\n📝 版本信息：v2.6.8 | 作者：left666 | 改进：Sakura520222\n"
+        )
+
+    def _build_version_info_help(self) -> str:
+        """构建版本信息帮助信息"""
+        return (
+            "\n📝 版本信息：v2.6.9 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
+    async def limit_help(self, event: AstrMessageEvent):
+        """显示详细帮助信息（仅管理员）"""
+        help_msg = "🚀 日调用限制插件 v2.6.9 - 管理员详细帮助\n"
+        help_msg += "═════════════════════════\n\n"
+        
+        # 组合所有帮助信息
+        help_msg += self._build_basic_management_help()
+        help_msg += self._build_time_period_help()
+        help_msg += self._build_reset_time_help()
+        help_msg += self._build_skip_patterns_help()
+        help_msg += self._build_query_stats_help()
+        help_msg += self._build_reset_commands_help()
+        help_msg += self._build_priority_rules_help()
+        help_msg += self._build_usage_modes_help()
+        help_msg += self._build_features_help()
+        help_msg += self._build_usage_tips_help()
+        help_msg += self._build_version_info_help()
+        
         event.set_result(MessageEventResult().message(help_msg))
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -1820,7 +2286,7 @@ class DailyLimitPlugin(star.Star):
     @limit_command_group.command("history")
     async def limit_history(self, event: AstrMessageEvent, user_id: str = None, days: int = 7):
         """查询使用历史记录（仅管理员）"""
-        if not self.redis:
+        if not self._validate_redis_connection():
             event.set_result(MessageEventResult().message("Redis未连接，无法获取历史记录"))
             return
 
@@ -1841,16 +2307,29 @@ class DailyLimitPlugin(star.Star):
                 for date_str in date_list:
                     # 查询个人聊天记录
                     private_key = self._get_usage_record_key(user_id, None, date_str)
-                    private_records = self.redis.lrange(private_key, 0, -1)
+                    private_records = self._safe_execute(
+                        lambda: self.redis.lrange(private_key, 0, -1),
+                        context=f"查询用户{user_id}在{date_str}的个人记录",
+                        default_return=[]
+                    )
                     
                     # 查询群组记录
                     group_pattern = f"astrbot:usage_record:{date_str}:*:{user_id}"
-                    group_keys = self.redis.keys(group_pattern)
+                    group_keys = self._safe_execute(
+                        lambda: self.redis.keys(group_pattern),
+                        context=f"查询用户{user_id}在{date_str}的群组记录键",
+                        default_return=[]
+                    )
                     
                     daily_total = len(private_records)
                     
                     for key in group_keys:
-                        group_records = self.redis.lrange(key, 0, -1)
+                        group_records = self._safe_execute(
+                            lambda k: self.redis.lrange(k, 0, -1),
+                            key,
+                            context=f"查询用户{user_id}在群组键{key}的记录",
+                            default_return=[]
+                        )
                         daily_total += len(group_records)
                     
                     if daily_total > 0:
@@ -1872,7 +2351,11 @@ class DailyLimitPlugin(star.Star):
                     stats_key = self._get_usage_stats_key(date_str)
                     global_key = f"{stats_key}:global"
                     
-                    total_requests = self.redis.hget(global_key, "total_requests")
+                    total_requests = self._safe_execute(
+                        lambda: self.redis.hget(global_key, "total_requests"),
+                        context=f"查询{date_str}全局统计",
+                        default_return=None
+                    )
                     if total_requests:
                         global_stats[date_str] = int(total_requests)
                 
@@ -1887,14 +2370,14 @@ class DailyLimitPlugin(star.Star):
                 event.set_result(MessageEventResult().message(history_msg))
                 
         except Exception as e:
-            self._log_error("查询历史记录失败: {}", str(e))
-            event.set_result(MessageEventResult().message("查询历史记录失败"))
+            self._handle_error(e, "历史记录查询", "查询历史记录时发生错误，请稍后重试")
+            event.set_result(MessageEventResult().message("查询历史记录失败，请稍后重试"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("analytics")
     async def limit_analytics(self, event: AstrMessageEvent, date_str: str = None):
         """多维度统计分析（仅管理员）"""
-        if not self.redis:
+        if not self._validate_redis_connection():
             event.set_result(MessageEventResult().message("Redis未连接，无法获取分析数据"))
             return
 
@@ -1906,15 +2389,27 @@ class DailyLimitPlugin(star.Star):
             
             # 获取全局统计
             global_key = f"{stats_key}:global"
-            total_requests = self.redis.hget(global_key, "total_requests")
+            total_requests = self._safe_execute(
+                lambda: self.redis.hget(global_key, "total_requests"),
+                context=f"获取{date_str}全局统计",
+                default_return=None
+            )
             
             # 获取用户统计
             user_pattern = f"{stats_key}:user:*"
-            user_keys = self.redis.keys(user_pattern)
+            user_keys = self._safe_execute(
+                lambda: self.redis.keys(user_pattern),
+                context=f"获取{date_str}用户统计键",
+                default_return=[]
+            )
             
             # 获取群组统计
             group_pattern = f"{stats_key}:group:*"
-            group_keys = self.redis.keys(group_pattern)
+            group_keys = self._safe_execute(
+                lambda: self.redis.keys(group_pattern),
+                context=f"获取{date_str}群组统计键",
+                default_return=[]
+            )
             
             analytics_msg = f"📈 {date_str} 多维度统计分析：\n\n"
             
@@ -1931,7 +2426,12 @@ class DailyLimitPlugin(star.Star):
                 # 计算用户平均使用次数
                 user_total = 0
                 for key in user_keys:
-                    usage = self.redis.hget(key, "total_usage")
+                    usage = self._safe_execute(
+                        lambda k: self.redis.hget(k, "total_usage"),
+                        key,
+                        context=f"获取用户键{key}的使用统计",
+                        default_return=None
+                    )
                     if usage:
                         user_total += int(usage)
                 
@@ -1947,7 +2447,12 @@ class DailyLimitPlugin(star.Star):
                 # 计算群组平均使用次数
                 group_total = 0
                 for key in group_keys:
-                    usage = self.redis.hget(key, "total_usage")
+                    usage = self._safe_execute(
+                        lambda k: self.redis.hget(k, "total_usage"),
+                        key,
+                        context=f"获取群组键{key}的使用统计",
+                        default_return=None
+                    )
                     if usage:
                         group_total += int(usage)
                 
@@ -1963,7 +2468,12 @@ class DailyLimitPlugin(star.Star):
                 usage_levels = {"低(1-5次)": 0, "中(6-20次)": 0, "高(21+次)": 0}
                 
                 for key in user_keys:
-                    usage = self.redis.hget(key, "total_usage")
+                    usage = self._safe_execute(
+                        lambda k: self.redis.hget(k, "total_usage"),
+                        key,
+                        context=f"获取用户键{key}的使用分布",
+                        default_return=None
+                    )
                     if usage:
                         usage_count = int(usage)
                         if usage_count <= 5:
@@ -1981,8 +2491,8 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message(analytics_msg))
             
         except Exception as e:
-            self._log_error("获取分析数据失败: {}", str(e))
-            event.set_result(MessageEventResult().message("获取分析数据失败"))
+            self._handle_error(e, "统计分析", "获取分析数据时发生错误，请稍后重试")
+            event.set_result(MessageEventResult().message("获取分析数据失败，请稍后重试"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("status")
@@ -2296,15 +2806,36 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message("重置使用次数失败，请检查Redis连接"))
 
     async def terminate(self):
-        """插件终止时的清理工作"""
+        """
+        插件终止时的清理工作
+        
+        停止Web服务器并清理所有相关资源，确保状态正确清理。
+        """
+        # 记录终止前的Web服务器状态
+        web_server_status = self.get_web_server_status()
+        
         # 停止Web服务器
         if self.web_server:
             try:
                 self._log_info("正在停止Web服务器...")
-                self.web_server.stop()
-                self._log_info("Web服务器已停止")
+                
+                # 记录停止前的状态
+                previous_status = self.web_server.get_status()
+                
+                # 停止Web服务器
+                success = self.web_server.stop()
+                
+                if success:
+                    self._log_info("Web服务器已停止")
+                    # 记录停止后的状态
+                    final_status = self.web_server.get_status()
+                    self._log_info("Web服务器终止状态: {}", final_status)
+                else:
+                    self._log_warning("Web服务器停止失败")
+                    
             except Exception as e:
-                self._log_error("停止Web服务器失败: {}", str(e))
+                error_msg = f"停止Web服务器失败: {str(e)}"
+                self._log_error(error_msg)
         
         # 清理Web服务器线程
         if self.web_server_thread and self.web_server_thread.is_alive():
@@ -2316,13 +2847,49 @@ class DailyLimitPlugin(star.Star):
                 else:
                     self._log_info("Web服务器线程已结束")
             except Exception as e:
-                self._log_error("等待Web服务器线程结束时出错: {}", str(e))
+                error_msg = f"等待Web服务器线程结束时出错: {str(e)}"
+                self._log_error(error_msg)
         
-        # 清理Web服务器实例
+        # 清理Web服务器实例和线程引用
         self.web_server = None
         self.web_server_thread = None
         
         self._log_info("日调用限制插件已终止")
+    
+    def _terminate_web_server(self):
+        """
+        专门用于停止Web服务器的方法
+        
+        返回：
+            bool: 停止成功返回True，失败返回False
+        """
+        if not self._is_web_server_running():
+            self._log_info("Web服务器未运行，无需停止")
+            return True
+            
+        try:
+            self._log_info("正在停止Web服务器...")
+            
+            # 记录停止前的状态
+            previous_status = self.get_web_server_status()
+            
+            # 停止Web服务器
+            success = self.web_server.stop()
+            
+            if success:
+                self._log_info("Web服务器已停止")
+                # 清理引用
+                self.web_server = None
+                self.web_server_thread = None
+                return True
+            else:
+                self._log_warning("Web服务器停止失败")
+                return False
+                
+        except Exception as e:
+            error_msg = f"停止Web服务器失败: {str(e)}"
+            self._log_error(error_msg)
+            return False
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("timeperiod", "list")
