@@ -205,14 +205,6 @@ class DailyLimitPlugin(star.Star):
             return False
         
         try:
-            # 检查连接是否已关闭
-            if hasattr(self.redis, 'connection_pool') and self.redis.connection_pool:
-                # 检查连接池状态
-                connection = self.redis.connection_pool.get_connection('ping')
-                if not connection.is_connected:
-                    self._log_warning("Redis连接已断开，尝试重新连接")
-                    connection.connect()
-            
             # 发送ping命令验证连接
             response = self.redis.ping()
             if response != True:
