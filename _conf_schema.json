@@ -182,7 +182,7 @@
                 "hint": "每隔多少分钟检查一次新版本"
             },
             "admin_users": {
-                "description": "管理员用户ID列表",
+                "description": "管理员用户ID列表（当前仅支持QQ）",
                 "type": "list",
                 "default": [],
                 "hint": "检测到新版本时通知的管理员用户ID，使用指令/sid查看ID"
@@ -192,6 +192,70 @@
                 "type": "text",
                 "default": "AstrBot-日限制插件 Limit\n\n🚀 检测到新版本可用！\n📦 当前版本：{current_version}\n🆕 最新版本：{new_version}\n📝 更新内容：{update_content}\n🔗 下载地址：{download_url}",
                 "hint": "支持变量：{current_version}（当前版本）、{new_version}（最新版本）、{update_content}（更新内容）、{download_url}（下载地址）"
+            }
+        }
+    },
+    "security": {
+        "description": "安全增强配置",
+        "type": "object",
+        "items": {
+            "anti_abuse_enabled": {
+                "description": "是否启用防刷机制",
+                "type": "bool",
+                "default": false
+            },
+            "rapid_request_threshold": {
+                "description": "快速请求阈值（次/秒）",
+                "type": "int",
+                "default": 10,
+                "hint": "10秒内超过此数量的请求将被视为异常行为"
+            },
+            "rapid_request_window": {
+                "description": "快速请求检测时间窗口（秒）",
+                "type": "int",
+                "default": 10,
+                "hint": "快速请求检测的时间窗口大小"
+            },
+            "consecutive_request_threshold": {
+                "description": "连续请求阈值（次）",
+                "type": "int",
+                "default": 5,
+                "hint": "连续请求超过此数量将被视为异常行为"
+            },
+            "consecutive_request_window": {
+                "description": "连续请求检测时间窗口（秒）",
+                "type": "int",
+                "default": 30,
+                "hint": "连续请求检测的时间窗口大小"
+            },
+            "auto_block_duration": {
+                "description": "自动限制时长（秒）",
+                "type": "int",
+                "default": 300,
+                "hint": "检测到异常行为后自动限制的时长"
+            },
+            "admin_notification_enabled": {
+                "description": "检测到异常行为时通知管理员",
+                "type": "bool",
+                "default": true
+            },
+            "admin_users": {
+                "description": "管理员用户ID列表（当前仅支持QQ）",
+                "type": "text",
+                "default": "",
+                "hint": "检测到异常行为时通知的管理员用户ID，一行一个（当前仅支持QQ）"
+            },
+            "block_notification_template": {
+                "description": "用户限制通知消息模板",
+                "type": "text",
+                "default": "检测到异常使用行为，您已被临时限制使用{auto_block_duration}秒",
+                "hint": "支持变量：{auto_block_duration}（限制时长）"
+            },
+            "notification_cooldown": {
+                "description": "通知冷却时间（秒）",
+                "type": "int",
+                "default": 300,
+                "hint": "同一用户重复触发限制时，在此时间内不会重复发送通知，避免骚扰"
             }
         }
     }
