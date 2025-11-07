@@ -165,5 +165,34 @@
                 "hint": "留空表示无需密码访问"
             }
         }
+    },
+    "version_check": {
+        "description": "版本检查配置",
+        "type": "object",
+        "items": {
+            "enabled": {
+                "description": "是否启用版本检查功能",
+                "type": "bool",
+                "default": true
+            },
+            "check_interval": {
+                "description": "检查间隔（分钟）",
+                "type": "int",
+                "default": 60,
+                "hint": "每隔多少分钟检查一次新版本"
+            },
+            "admin_users": {
+                "description": "管理员用户ID列表",
+                "type": "list",
+                "default": [],
+                "hint": "检测到新版本时通知的管理员用户ID，使用指令/sid查看ID"
+            },
+            "notification_message": {
+                "description": "新版本通知消息模板",
+                "type": "text",
+                "default": "AstrBot-日限制插件 Limit\n\n🚀 检测到新版本可用！\n📦 当前版本：{current_version}\n🆕 最新版本：{new_version}\n📝 更新内容：{update_content}\n🔗 下载地址：{download_url}",
+                "hint": "支持变量：{current_version}（当前版本）、{new_version}（最新版本）、{update_content}（更新内容）、{download_url}（下载地址）"
+            }
+        }
     }
 }
