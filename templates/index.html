@@ -613,6 +613,24 @@
             </div>
         </div>
         
+        <!-- 趋势分析图表 -->
+        <div class="data-section">
+            <div class="section-header">
+                <div class="section-title">📈 使用趋势分析</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="trendPeriod" onchange="loadTrends()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="day">最近7天</option>
+                        <option value="week" selected>最近4周</option>
+                        <option value="month">最近3个月</option>
+                    </select>
+                    <button class="refresh-btn" onclick="loadTrends()" style="padding: 8px 12px; font-size: 0.9rem;">刷新趋势</button>
+                </div>
+            </div>
+            <div class="chart-container" style="height: 400px;">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+        
         <!-- 用户数据 -->
         <div class="data-section">
             <div class="section-header">
@@ -679,10 +697,12 @@
 
     <script>
         let usageChart = null;
+        let trendChart = null;
         
         // 页面加载时获取数据
         document.addEventListener('DOMContentLoaded', function() {
             loadData();
+            loadTrends();
             // 每30秒自动刷新数据
             setInterval(loadData, 30000);
             // 创建樱花效果
@@ -708,6 +728,23 @@
             } catch (error) {
                 console.error('加载数据失败:', error);
                 showError('数据加载失败: ' + error.message);
+            }
+        }
+        
+        async function loadTrends() {
+            try {
+                const period = document.getElementById('trendPeriod').value;
+                const response = await axios.get(`/api/trends?period=${period}`);
+                
+                if (response.data.success) {
+                    const trendsData = response.data.data;
+                    updateTrendChart(trendsData);
+                } else {
+                    throw new Error(response.data.error);
+                }
+            } catch (error) {
+                console.error('加载趋势数据失败:', error);
+                showError('趋势数据加载失败: ' + error.message);
             }
         }
         
@@ -1029,6 +1066,163 @@
                                 weight: 'bold'
                             }
                         }
+                    }
+                }
+            });
+        }
+        
+        function updateTrendChart(trendsData) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            // 销毁现有图表
+            if (trendChart) {
+                trendChart.destroy();
+            }
+            
+            // 提取数据
+            const dates = trendsData.data.map(item => item.date);
+            const totalRequests = trendsData.data.map(item => item.total_requests);
+            const activeUsers = trendsData.data.map(item => item.active_users);
+            const activeGroups = trendsData.data.map(item => item.active_groups);
+            
+            // 根据周期设置图表标题
+            let periodText = '';
+            switch(trendsData.period) {
+                case 'day':
+                    periodText = '最近7天';
+                    break;
+                case 'week':
+                    periodText = '最近4周';
+                    break;
+                case 'month':
+                    periodText = '最近3个月';
+                    break;
+                default:
+                    periodText = '趋势分析';
+            }
+            
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: '总请求数',
+                            data: totalRequests,
+                            borderColor: 'rgba(214, 51, 132, 1)',
+                            backgroundColor: 'rgba(214, 51, 132, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: 'rgba(214, 51, 132, 1)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: '活跃用户数',
+                            data: activeUsers,
+                            borderColor: 'rgba(255, 107, 139, 1)',
+                            backgroundColor: 'rgba(255, 107, 139, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: 'rgba(255, 107, 139, 1)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: '活跃群组数',
+                            data: activeGroups,
+                            borderColor: 'rgba(255, 158, 181, 1)',
+                            backgroundColor: 'rgba(255, 158, 181, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: 'rgba(255, 158, 181, 1)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: '#5a3d5c',
+                                font: {
+                                    size: 12,
+                                    weight: 'bold'
+                                },
+                                padding: 15
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: `${periodText} - 使用趋势分析`,
+                            color: '#d63384',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            },
+                            padding: 20
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            titleColor: '#d63384',
+                            bodyColor: '#5a3d5c',
+                            borderColor: 'rgba(255, 182, 193, 0.5)',
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            padding: 12
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 182, 193, 0.2)',
+                                borderDash: [5, 5]
+                            },
+                            ticks: {
+                                color: '#8b5a7c',
+                                font: {
+                                    size: 11
+                                },
+                                maxRotation: 45
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: 'rgba(255, 182, 193, 0.2)',
+                                borderDash: [5, 5]
+                            },
+                            ticks: {
+                                color: '#8b5a7c',
+                                font: {
+                                    size: 11
+                                }
+                            },
+                            beginAtZero: true
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
                     }
                 }
             });

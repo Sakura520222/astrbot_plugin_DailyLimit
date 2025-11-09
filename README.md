@@ -1,20 +1,21 @@
-# 🚀 AstrBot 日调用限制插件 v2.7.2
+# 🚀 AstrBot 日调用限制插件 v2.7.3
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.7.2-blue)
+![Version](https://img.shields.io/badge/版本-v2.7.3-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
 ![Status](https://img.shields.io/badge/Web功能-正式发布-green)
 ![Bug](https://img.shields.io/badge/已知Bug-无-green)
+![Trends](https://img.shields.io/badge/趋势分析-已集成-green)
 
 ![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
 ![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
 ![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
 
 ![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
-![GitHub Release](https://img.shields.io/github/v/release/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=最新版本)
+![GitHub Release](https://img.shields.io/github/v/release/Sakura520222/astrbot_plugin_DailyLimit?style=for-the-badge&logo=github&label=最新版本)
 
 ---
 
@@ -90,6 +91,14 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 - **管理员通知**：防刷限制触发时自动向管理员发送通知，便于及时处理
 - **限制时长配置**：支持自定义防刷限制时长，灵活应对不同场景
 - **防重复通知**：新增防重复通知功能，避免同一用户重复触发限制时重复发送提醒消息
+
+### 📈 趋势分析功能 (v2.7.3新增)
+- **多周期趋势分析**：支持日、周、月三种时间维度的使用趋势分析
+- **多指标统计**：提供用户活跃度、使用频率、使用量分布等多维度指标
+- **Web界面集成**：在Web管理界面中集成趋势分析图表，支持Chart.js可视化
+- **API接口支持**：提供`/api/trends`接口，支持不同时间周期的趋势数据查询
+- **认证机制**：趋势分析API受密码保护，确保数据安全访问
+- **错误处理**：完善的参数验证和异常处理机制
 
 ## 🚀 快速开始
 
@@ -416,6 +425,17 @@ Redis是插件的数据存储后端，必须正确配置才能正常运行。
 | `/limit security config` | 查看防刷配置详情 | `/limit security config` |
 | `/limit security unblock <用户ID>` | 解除用户限制 | `/limit security unblock 123456` |
 | `/limit security blocklist` | 查看当前被限制用户列表 | `/limit security blocklist` |
+
+#### 📈 趋势分析功能 (v2.7.3+)
+| 命令 | 功能 | 示例 |
+|------|------|------|
+| `/limit trends` | 查看趋势分析Web管理界面访问地址 | `/limit trends` |
+| `/limit trends_api <周期>` | 获取趋势分析API数据 | `/limit trends_api week` |
+
+**趋势分析功能说明：**
+- **Web界面访问**：通过`/limit trends`命令获取Web管理界面地址，登录后可查看趋势分析图表
+- **API数据获取**：通过`/limit trends_api <周期>`命令直接获取趋势分析数据，支持`day`、`week`、`month`三种周期
+- **多维度分析**：提供用户活跃度、使用频率、使用量分布等多维度趋势数据
 
 ## 🔄 版本更新
 [版本日志](./change_log.md)

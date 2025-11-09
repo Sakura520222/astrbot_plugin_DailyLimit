@@ -40,7 +40,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.7.2",
+    version="v2.7.3",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -1152,6 +1152,88 @@ class DailyLimitPlugin(star.Star):
         
         return f"astrbot:usage_stats:{date_str}"
 
+    def _get_trend_stats_key(self, period_type, period_value):
+        """获取趋势统计Redis键
+        
+        参数：
+            period_type: 统计周期类型 ('daily', 'weekly', 'monthly')
+            period_value: 周期值 (日期字符串、周数、月份)
+        """
+        return f"astrbot:trend_stats:{period_type}:{period_value}"
+
+    def _get_week_number(self, date_obj=None):
+        """获取日期对应的周数"""
+        if date_obj is None:
+            date_obj = datetime.datetime.now()
+        return date_obj.isocalendar()[1]  # 返回周数
+
+    def _get_month_key(self, date_obj=None):
+        """获取月份键（格式：YYYY-MM）"""
+        if date_obj is None:
+            date_obj = datetime.datetime.now()
+        return date_obj.strftime("%Y-%m")
+
+    def _record_trend_data(self, user_id, group_id=None, usage_type="llm_request"):
+        """记录趋势分析数据
+        
+        记录日、周、月三个维度的使用趋势数据
+        """
+        if not self.redis:
+            return False
+            
+        try:
+            current_time = datetime.datetime.now()
+            
+            # 记录日趋势数据
+            daily_key = self._get_trend_stats_key("daily", current_time.strftime("%Y-%m-%d"))
+            self._update_trend_stats(daily_key, user_id, group_id, usage_type)
+            
+            # 记录周趋势数据
+            week_number = self._get_week_number(current_time)
+            year = current_time.year
+            weekly_key = self._get_trend_stats_key("weekly", f"{year}-W{week_number}")
+            self._update_trend_stats(weekly_key, user_id, group_id, usage_type)
+            
+            # 记录月趋势数据
+            month_key = self._get_trend_stats_key("monthly", self._get_month_key(current_time))
+            self._update_trend_stats(month_key, user_id, group_id, usage_type)
+            
+            return True
+        except Exception as e:
+            self._log_error("记录趋势数据失败: {}", str(e))
+            return False
+
+    def _update_trend_stats(self, trend_key, user_id, group_id, usage_type):
+        """更新趋势统计数据"""
+        # 使用Redis哈希存储趋势数据
+        pipe = self.redis.pipeline()
+        
+        # 更新总请求数
+        pipe.hincrby(trend_key, "total_requests", 1)
+        
+        # 更新用户统计
+        user_stats_key = f"user:{user_id}"
+        pipe.hincrby(trend_key, user_stats_key, 1)
+        
+        # 更新群组统计（如果有群组）
+        if group_id:
+            group_stats_key = f"group:{group_id}"
+            pipe.hincrby(trend_key, group_stats_key, 1)
+        
+        # 更新使用类型统计
+        usage_stats_key = f"usage_type:{usage_type}"
+        pipe.hincrby(trend_key, usage_stats_key, 1)
+        
+        # 设置过期时间（月数据保留6个月，周数据保留12周，日数据保留30天）
+        if "monthly" in trend_key:
+            pipe.expire(trend_key, 180 * 24 * 3600)  # 6个月
+        elif "weekly" in trend_key:
+            pipe.expire(trend_key, 84 * 24 * 3600)   # 12周
+        else:  # daily
+            pipe.expire(trend_key, 30 * 24 * 3600)   # 30天
+        
+        pipe.execute()
+
     def _should_skip_message(self, message_str):
         """检查消息是否应该忽略处理"""
         if not message_str or not self.skip_patterns:
@@ -1363,6 +1445,7 @@ class DailyLimitPlugin(star.Star):
         记录用户或群组的使用情况到Redis中，包括：
         - 使用记录（按日期和时间）
         - 使用统计更新
+        - 趋势数据分析
         - 过期时间设置
         
         参数：
@@ -1382,6 +1465,9 @@ class DailyLimitPlugin(star.Star):
             
             # 更新统计信息
             self._update_usage_stats(user_id, group_id)
+            
+            # 记录趋势分析数据
+            self._record_trend_data(user_id, group_id, usage_type)
             
             return True
         except Exception as e:
@@ -1474,6 +1560,149 @@ class DailyLimitPlugin(star.Star):
         
         # 更新全局统计
         self.redis.hincrby(keys_to_update["global_stats"], "total_requests", 1)
+
+    def _get_trend_data(self, period_type, days=7):
+        """获取趋势数据
+        
+        参数：
+            period_type: 统计周期类型 ('daily', 'weekly', 'monthly')
+            days: 查询天数（仅对daily类型有效）
+        """
+        if not self.redis:
+            return {}
+            
+        try:
+            trend_data = {}
+            current_time = datetime.datetime.now()
+            
+            if period_type == "daily":
+                # 获取最近days天的日趋势数据
+                for i in range(days):
+                    date_obj = current_time - datetime.timedelta(days=i)
+                    date_key = date_obj.strftime("%Y-%m-%d")
+                    trend_key = self._get_trend_stats_key("daily", date_key)
+                    
+                    data = self._get_trend_stats_by_key(trend_key)
+                    if data:
+                        trend_data[date_key] = data
+                        
+            elif period_type == "weekly":
+                # 获取最近4周的周趋势数据
+                for i in range(4):
+                    date_obj = current_time - datetime.timedelta(weeks=i)
+                    week_number = self._get_week_number(date_obj)
+                    year = date_obj.year
+                    week_key = f"{year}-W{week_number}"
+                    trend_key = self._get_trend_stats_key("weekly", week_key)
+                    
+                    data = self._get_trend_stats_by_key(trend_key)
+                    if data:
+                        trend_data[week_key] = data
+                        
+            elif period_type == "monthly":
+                # 获取最近6个月的月趋势数据
+                for i in range(6):
+                    date_obj = current_time - datetime.timedelta(days=30*i)
+                    month_key = self._get_month_key(date_obj)
+                    trend_key = self._get_trend_stats_key("monthly", month_key)
+                    
+                    data = self._get_trend_stats_by_key(trend_key)
+                    if data:
+                        trend_data[month_key] = data
+                        
+            return trend_data
+            
+        except Exception as e:
+            self._log_error("获取趋势数据失败: {}", str(e))
+            return {}
+
+    def _get_trend_stats_by_key(self, trend_key):
+        """根据趋势键获取统计数据"""
+        try:
+            data = self.redis.hgetall(trend_key)
+            if not data:
+                return None
+                
+            # 解析统计数据
+            stats = {
+                "total_requests": int(data.get("total_requests", 0)),
+                "active_users": 0,
+                "active_groups": 0,
+                "usage_types": {}
+            }
+            
+            # 统计活跃用户和群组
+            user_set = set()
+            group_set = set()
+            
+            for key, value in data.items():
+                if key.startswith("user:"):
+                    user_id = key.split(":")[1]
+                    user_set.add(user_id)
+                    stats["active_users"] = len(user_set)
+                elif key.startswith("group:"):
+                    group_id = key.split(":")[1]
+                    group_set.add(group_id)
+                    stats["active_groups"] = len(group_set)
+                elif key.startswith("usage_type:"):
+                    usage_type = key.split(":")[1]
+                    stats["usage_types"][usage_type] = int(value)
+                    
+            return stats
+            
+        except Exception as e:
+            self._log_error("解析趋势统计数据失败: {}", str(e))
+            return None
+
+    def _analyze_trends(self, trend_data):
+        """分析趋势数据，生成趋势报告"""
+        if not trend_data:
+            return "暂无趋势数据"
+            
+        try:
+            # 计算总请求数趋势
+            total_requests = []
+            active_users = []
+            active_groups = []
+            dates = list(trend_data.keys())
+            
+            for date in dates:
+                data = trend_data[date]
+                total_requests.append(data.get("total_requests", 0))
+                active_users.append(data.get("active_users", 0))
+                active_groups.append(data.get("active_groups", 0))
+            
+            # 计算增长率
+            if len(total_requests) > 1:
+                current_total = total_requests[-1]
+                previous_total = total_requests[-2]
+                if previous_total > 0:
+                    growth_rate = ((current_total - previous_total) / previous_total) * 100
+                else:
+                    growth_rate = 100 if current_total > 0 else 0
+            else:
+                growth_rate = 0
+            
+            # 生成趋势报告
+            trend_report = "📈 使用趋势分析报告\n"
+            trend_report += "═══════════════\n\n"
+            
+            trend_report += f"📊 总请求数趋势: {total_requests[-1]} 次\n"
+            trend_report += f"📈 增长率: {growth_rate:+.1f}%\n"
+            trend_report += f"👤 活跃用户数: {active_users[-1]} 人\n"
+            trend_report += f"👥 活跃群组数: {active_groups[-1]} 个\n\n"
+            
+            # 添加详细趋势
+            trend_report += "📅 详细趋势数据:\n"
+            for i, date in enumerate(dates):
+                data = trend_data[date]
+                trend_report += f"• {date}: {data.get('total_requests', 0)} 次请求, {data.get('active_users', 0)} 活跃用户\n"
+            
+            return trend_report
+            
+        except Exception as e:
+            self._log_error("分析趋势数据失败: {}", str(e))
+            return "趋势分析失败，请稍后重试"
         
         # 更新群组统计（如果有）
         if "group_stats" in keys_to_update:
@@ -2024,7 +2253,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.7.2 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.7.3 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -2088,7 +2317,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.7.2 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.7.3 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -2489,6 +2718,8 @@ class DailyLimitPlugin(star.Star):
             "├── /limit stats - 查看今日使用统计信息\n"
             "├── /limit history [用户ID] [天数] - 查询使用历史记录\n"
             "│   示例：/limit history 123456 7 - 查询用户123456最近7天的使用记录\n"
+            "├── /limit trends [周期] - 使用趋势分析（日/周/月）\n"
+            "│   示例：/limit trends week - 查看最近4周的使用趋势\n"
             "├── /limit analytics [日期] - 多维度统计分析\n"
             "│   示例：/limit analytics 2025-01-23 - 分析2025年1月23日的使用数据\n"
             "├── /limit top [数量] - 查看使用次数排行榜\n"
@@ -2563,6 +2794,7 @@ class DailyLimitPlugin(star.Star):
             "✅ 自定义重置时间：支持设置每日重置时间（默认00:00）\n"
             "✅ 群组协作模式：支持共享模式（群组共享次数）和独立模式（成员独立次数）\n"
             "✅ 数据监控分析：实时监控、使用统计、排行榜和状态监控\n"
+            "✅ 使用趋势分析：支持日/周/月多维度使用趋势分析\n"
             "✅ 使用记录：详细记录每次调用，支持历史查询和统计分析\n"
             "✅ 自定义忽略模式：可配置需要忽略处理的消息前缀\n"
             "✅ 智能提醒：剩余次数提醒和使用状态监控\n"
@@ -2582,13 +2814,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.7.2 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.7.3 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.7.2 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.7.3 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -3131,6 +3363,117 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             self._handle_error(e, "历史记录查询", "查询历史记录时发生错误，请稍后重试")
             event.set_result(MessageEventResult().message("查询历史记录失败，请稍后重试"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("trends")
+    async def limit_trends(self, event: AstrMessageEvent, period: str = "day"):
+        """使用趋势分析（仅管理员）
+        
+        Args:
+            period: 分析周期，支持 day/week/month
+        """
+        if not self._validate_redis_connection():
+            event.set_result(MessageEventResult().message("Redis未连接，无法获取趋势数据"))
+            return
+
+        try:
+            # 验证周期参数
+            valid_periods = ["day", "week", "month"]
+            if period not in valid_periods:
+                event.set_result(MessageEventResult().message(
+                    f"无效的分析周期，支持：{', '.join(valid_periods)}"
+                ))
+                return
+            
+            # 映射周期参数到内部类型
+            period_mapping = {
+                "day": "daily",
+                "week": "weekly", 
+                "month": "monthly"
+            }
+            period_type = period_mapping.get(period, "daily")
+            
+            # 获取趋势数据
+            trend_data = self._get_trend_data(period_type)
+            
+            if not trend_data:
+                event.set_result(MessageEventResult().message(
+                    f"暂无{period}周期的趋势数据"
+                ))
+                return
+            
+            # 分析趋势数据
+            trend_report = self._analyze_trends(trend_data)
+            
+            # 构建趋势分析消息
+            trend_msg = f"📈 {period.capitalize()}使用趋势分析：\n\n"
+            trend_msg += trend_report
+            
+            event.set_result(MessageEventResult().message(trend_msg))
+            
+        except Exception as e:
+            self._handle_error(e, "趋势分析", "获取趋势数据时发生错误，请稍后重试")
+            event.set_result(MessageEventResult().message("获取趋势数据失败，请稍后重试"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("trends_api")
+    async def limit_trends_api(self, event: AstrMessageEvent, period: str = "week"):
+        """获取趋势分析API数据（仅管理员）
+        
+        Args:
+            period: 分析周期，支持 day/week/month
+        """
+        if not self._validate_redis_connection():
+            event.set_result(MessageEventResult().message("Redis未连接，无法获取趋势数据"))
+            return
+
+        try:
+            # 验证周期参数
+            valid_periods = ["day", "week", "month"]
+            if period not in valid_periods:
+                event.set_result(MessageEventResult().message(
+                    f"无效的分析周期，支持：{', '.join(valid_periods)}"
+                ))
+                return
+            
+            # 映射周期参数到内部类型
+            period_mapping = {
+                "day": "daily",
+                "week": "weekly", 
+                "month": "monthly"
+            }
+            period_type = period_mapping.get(period, "weekly")
+            
+            # 获取趋势数据
+            trend_data = self._get_trend_data(period_type)
+            
+            if not trend_data:
+                event.set_result(MessageEventResult().message(
+                    f"暂无{period}周期的趋势数据"
+                ))
+                return
+            
+            # 格式化API响应数据
+            api_response = {
+                "success": True,
+                "period": period,
+                "data": trend_data,
+                "summary": {
+                    "total_periods": len(trend_data),
+                    "total_requests": sum([data.get("total_requests", 0) for data in trend_data.values()]),
+                    "max_active_users": max([data.get("active_users", 0) for data in trend_data.values()]) if trend_data else 0,
+                    "max_active_groups": max([data.get("active_groups", 0) for data in trend_data.values()]) if trend_data else 0
+                }
+            }
+            
+            # 返回JSON格式的API数据
+            event.set_result(MessageEventResult().message(
+                f"📊 {period.capitalize()}趋势分析API数据：\n```json\n{json.dumps(api_response, indent=2, ensure_ascii=False)}\n```"
+            ))
+            
+        except Exception as e:
+            self._handle_error(e, "趋势分析API", "获取趋势数据时发生错误，请稍后重试")
+            event.set_result(MessageEventResult().message("获取趋势数据失败，请稍后重试"))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("analytics")
@@ -3853,7 +4196,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.7.2")
+            current_version = self.config.get("version", "v2.7.3")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -3991,7 +4334,7 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.7.2")
+            current_version = self.config.get("version", "v2.7.3")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
@@ -4022,7 +4365,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.7.2")
+            current_version = self.config.get("version", "v2.7.3")
             
             # 构建版本信息消息
             version_msg = f"📦 日调用限制插件版本信息\n"
