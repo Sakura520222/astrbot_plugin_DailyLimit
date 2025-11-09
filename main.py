@@ -40,7 +40,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.7.1",
+    version="v2.7.2",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -490,73 +490,213 @@ class DailyLimitPlugin(star.Star):
         try:
             security_config = self.config.get("security", {})
             
-            # 防刷机制开关
-            self.anti_abuse_enabled = security_config.get("anti_abuse_enabled", False)
+            # 加载基础配置
+            self._load_basic_security_config(security_config)
             
-            # 异常检测阈值
-            self.rapid_request_threshold = security_config.get("rapid_request_threshold", 10)  # 10秒内请求次数
-            self.rapid_request_window = security_config.get("rapid_request_window", 10)  # 时间窗口（秒）
-            self.consecutive_request_threshold = security_config.get("consecutive_request_threshold", 5)  # 连续请求次数
-            self.consecutive_request_window = security_config.get("consecutive_request_window", 30)  # 时间窗口（秒）
+            # 加载检测阈值配置
+            self._load_detection_thresholds(security_config)
             
-            # 自动限制配置
-            self.auto_block_duration = security_config.get("auto_block_duration", 300)  # 自动限制时长（秒）
-            self.block_notification_template = security_config.get("block_notification_template", 
-                "检测到异常使用行为，您已被临时限制使用{auto_block_duration}秒")
+            # 加载自动限制配置
+            self._load_auto_block_config(security_config)
             
-            # 通知配置
-            self.admin_notification_enabled = security_config.get("admin_notification_enabled", True)
-            self.admin_users = security_config.get("admin_users", "").strip().split("\n") if security_config.get("admin_users", "").strip() else []
+            # 加载通知配置
+            self._load_notification_config(security_config)
             
-            # 防重复通知配置
-            self.notification_cooldown = security_config.get("notification_cooldown", 300)  # 通知冷却时间（秒）
-            self.notified_users = {}  # 已通知用户记录 {"user_id": "last_notification_time"}
-            self.notified_admins = {}  # 已通知管理员记录 {"user_id": "last_admin_notification_time"}
+            # 初始化通知记录
+            self._init_notification_records()
             
             self._log_info("安全配置加载完成，防刷机制{}", "已启用" if self.anti_abuse_enabled else "未启用")
             
         except Exception as e:
             self._log_error("加载安全配置失败: {}", str(e))
             # 使用默认值
-            self.anti_abuse_enabled = False
-            self.rapid_request_threshold = 10
-            self.rapid_request_window = 10
-            self.consecutive_request_threshold = 5
-            self.consecutive_request_window = 30
-            self.auto_block_duration = 300
-            self.block_notification_template = "检测到异常使用行为，您已被临时限制使用{auto_block_duration}秒"
-            self.admin_notification_enabled = True
-            self.admin_users = []
-            self.notification_cooldown = 300
-            self.notified_users = {}
-            self.notified_admins = {}
+            self._set_default_security_config()
+    
+    def _load_basic_security_config(self, security_config):
+        """加载基础安全配置"""
+        self.anti_abuse_enabled = security_config.get("anti_abuse_enabled", False)
+    
+    def _load_detection_thresholds(self, security_config):
+        """加载检测阈值配置"""
+        self.rapid_request_threshold = security_config.get("rapid_request_threshold", 10)  # 10秒内请求次数
+        self.rapid_request_window = security_config.get("rapid_request_window", 10)  # 时间窗口（秒）
+        self.consecutive_request_threshold = security_config.get("consecutive_request_threshold", 5)  # 连续请求次数
+        self.consecutive_request_window = security_config.get("consecutive_request_window", 30)  # 时间窗口（秒）
+    
+    def _load_auto_block_config(self, security_config):
+        """加载自动限制配置"""
+        self.auto_block_duration = security_config.get("auto_block_duration", 300)  # 自动限制时长（秒）
+        self.block_notification_template = security_config.get("block_notification_template", 
+            "检测到异常使用行为，您已被临时限制使用{auto_block_duration}秒")
+    
+    def _load_notification_config(self, security_config):
+        """加载通知配置"""
+        self.admin_notification_enabled = security_config.get("admin_notification_enabled", True)
+        admin_users_text = security_config.get("admin_users", "").strip()
+        self.admin_users = admin_users_text.split("\n") if admin_users_text else []
+        self.notification_cooldown = security_config.get("notification_cooldown", 300)  # 通知冷却时间（秒）
+    
+    def _init_notification_records(self):
+        """初始化通知记录"""
+        self.notified_users = {}  # 已通知用户记录 {"user_id": "last_notification_time"}
+        self.notified_admins = {}  # 已通知管理员记录 {"user_id": "last_admin_notification_time"}
+    
+    def _set_default_security_config(self):
+        """设置默认安全配置"""
+        self.anti_abuse_enabled = False
+        self.rapid_request_threshold = 10
+        self.rapid_request_window = 10
+        self.consecutive_request_threshold = 5
+        self.consecutive_request_window = 30
+        self.auto_block_duration = 300
+        self.block_notification_template = "检测到异常使用行为，您已被临时限制使用{auto_block_duration}秒"
+        self.admin_notification_enabled = True
+        self.admin_users = []
+        self.notification_cooldown = 300
+        self.notified_users = {}
+        self.notified_admins = {}
 
     def _detect_abuse_behavior(self, user_id, timestamp):
         """检测异常使用行为
         
+        这是异常检测的主入口函数，负责协调整个检测流程。
+        
         参数:
-            user_id: 用户ID
-            timestamp: 当前时间戳
+            user_id: 用户ID（字符串或数字）
+            timestamp: 当前时间戳（可选，默认使用当前时间）
             
         返回:
-            dict: 检测结果，包含异常类型和详细信息
+            dict: 检测结果，包含以下字段：
+                - is_abuse (bool): 是否检测到异常行为
+                - reason (str): 检测结果描述
+                - type (str, 可选): 异常类型（如"rapid_request", "consecutive_request"）
+                - count (int, 可选): 异常请求次数
+                - block_until (float, 可选): 限制结束时间戳
+                - original_reason (str, 可选): 原始限制原因
         """
         if not self.anti_abuse_enabled:
             return {"is_abuse": False, "reason": "防刷机制未启用"}
         
         try:
-            user_id = str(user_id)
-            current_time = timestamp or time.time()
+            return self._execute_abuse_detection_pipeline(user_id, timestamp)
+        except Exception as e:
+            self._log_error("检测异常使用行为失败: {}", str(e))
+            return {"is_abuse": False, "reason": "检测失败"}
+    
+    def _execute_abuse_detection_pipeline(self, user_id, timestamp):
+        """执行异常检测流水线
+        
+        这是异常检测的核心流程，按顺序执行以下步骤：
+        1. 清理过期通知记录
+        2. 检查用户限制状态
+        3. 初始化用户记录
+        4. 记录当前请求并清理过期记录
+        5. 执行异常检测规则
+        6. 更新用户统计信息
+        
+        参数:
+            user_id: 用户ID（字符串）
+            timestamp: 当前时间戳（可选）
             
-            # 清理过期通知记录（保留最近24小时的数据）
+        返回:
+            dict: 检测结果，格式与 _detect_abuse_behavior 相同
+        """
+        user_id = str(user_id)
+        current_time = timestamp or time.time()
+        
+        try:
+            # 执行异常检测流程
+            return self._run_abuse_detection_flow(user_id, current_time)
+            
+        except Exception as e:
+            self._log_error("异常检测流水线执行失败 - 用户 {}: {}", user_id, str(e))
+            # 在检测过程中发生异常时，返回安全结果，避免误判
+            return {"is_abuse": False, "reason": "检测过程异常，允许使用"}
+    
+    def _run_abuse_detection_flow(self, user_id, current_time):
+        """执行异常检测流程
+        
+        参数:
+            user_id: 用户ID（字符串）
+            current_time: 当前时间戳
+            
+        返回:
+            dict: 检测结果
+        """
+        # 步骤1: 清理过期通知记录
+        self._cleanup_expired_notifications(current_time)
+        
+        # 步骤2: 检查用户是否已被限制
+        block_check_result = self._check_user_block_status(user_id, current_time)
+        if block_check_result["is_abuse"]:
+            return block_check_result
+        
+        # 步骤3: 初始化用户记录
+        self._init_user_records(user_id)
+        
+        # 步骤4: 记录用户请求并清理过期记录
+        self._record_user_request(user_id, current_time)
+        
+        # 步骤5: 执行异常检测规则
+        abuse_result = self._execute_abuse_detection_rules(user_id, current_time)
+        if abuse_result["is_abuse"]:
+            return abuse_result
+        
+        # 步骤6: 更新用户统计信息
+        self._update_user_stats(user_id, current_time)
+        
+        return {"is_abuse": False, "reason": "正常使用"}
+    
+    def _execute_abuse_detection_rules(self, user_id, current_time):
+        """执行异常检测规则
+        
+        按顺序执行以下检测规则：
+        1. 快速请求检测：检查用户在短时间内是否发送过多请求
+        2. 连续请求检测：检查用户是否连续发送请求（间隔时间过短）
+        
+        参数:
+            user_id: 用户ID（字符串）
+            current_time: 当前时间戳
+            
+        返回:
+            dict: 检测结果，如果任一规则检测到异常则立即返回
+        """
+        try:
+            # 检测快速请求异常
+            rapid_request_result = self._detect_rapid_requests(user_id, current_time)
+            if rapid_request_result["is_abuse"]:
+                return rapid_request_result
+            
+            # 检测连续请求异常
+            consecutive_request_result = self._detect_consecutive_requests(user_id, current_time)
+            if consecutive_request_result["is_abuse"]:
+                return consecutive_request_result
+            
+            return {"is_abuse": False, "reason": "所有检测规则通过"}
+            
+        except Exception as e:
+            self._log_error("异常检测规则执行失败 - 用户 {}: {}", user_id, str(e))
+            # 在规则检测过程中发生异常时，返回安全结果
+            return {"is_abuse": False, "reason": "规则检测异常，允许使用"}
+    
+    def _cleanup_expired_notifications(self, current_time):
+        """清理过期通知记录（保留最近24小时的数据）"""
+        try:
             notification_cutoff_time = current_time - 86400  # 24小时
-            self.notified_users = {uid: time for uid, time in self.notified_users.items() 
-                                 if time > notification_cutoff_time}
-            self.notified_admins = {uid: time for uid, time in self.notified_admins.items() 
-                                  if time > notification_cutoff_time}
-            
-            # 检查用户是否已被限制
-            if user_id in self.blocked_users:
+            if hasattr(self, 'notified_users'):
+                self.notified_users = {uid: time for uid, time in self.notified_users.items() 
+                                     if time > notification_cutoff_time}
+            if hasattr(self, 'notified_admins'):
+                self.notified_admins = {uid: time for uid, time in self.notified_admins.items() 
+                                      if time > notification_cutoff_time}
+        except Exception as e:
+            self._log_error("清理过期通知记录失败: {}", str(e))
+            # 清理失败不影响主要功能，继续执行
+    
+    def _check_user_block_status(self, user_id, current_time):
+        """检查用户是否已被限制"""
+        try:
+            if hasattr(self, 'blocked_users') and user_id in self.blocked_users:
                 block_info = self.blocked_users[user_id]
                 if current_time < block_info["block_until"]:
                     return {
@@ -567,13 +707,29 @@ class DailyLimitPlugin(star.Star):
                     }
                 else:
                     # 限制已过期，移除记录
-                    del self.blocked_users[user_id]
-                    if user_id in self.abuse_records:
-                        del self.abuse_records[user_id]
-                    if user_id in self.abuse_stats:
-                        del self.abuse_stats[user_id]
-            
-            # 初始化用户记录
+                    self._cleanup_expired_block(user_id)
+            return {"is_abuse": False, "reason": "用户未被限制"}
+        except Exception as e:
+            self._log_error("检查用户限制状态失败 - 用户 {}: {}", user_id, str(e))
+            # 检查失败时返回安全结果
+            return {"is_abuse": False, "reason": "限制状态检查异常，允许使用"}
+    
+    def _cleanup_expired_block(self, user_id):
+        """清理过期的用户限制记录"""
+        del self.blocked_users[user_id]
+        if user_id in self.abuse_records:
+            del self.abuse_records[user_id]
+        if user_id in self.abuse_stats:
+            del self.abuse_stats[user_id]
+    
+    def _init_user_records(self, user_id):
+        """初始化用户记录"""
+        try:
+            if not hasattr(self, 'abuse_records'):
+                self.abuse_records = {}
+            if not hasattr(self, 'abuse_stats'):
+                self.abuse_stats = {}
+                
             if user_id not in self.abuse_records:
                 self.abuse_records[user_id] = []
             if user_id not in self.abuse_stats:
@@ -582,6 +738,16 @@ class DailyLimitPlugin(star.Star):
                     "consecutive_count": 0,
                     "rapid_count": 0
                 }
+        except Exception as e:
+            self._log_error("初始化用户记录失败 - 用户 {}: {}", user_id, str(e))
+            # 初始化失败不影响主要功能，继续执行
+    
+    def _record_user_request(self, user_id, current_time):
+        """记录用户请求并清理过期记录"""
+        try:
+            # 确保记录字典存在
+            if not hasattr(self, 'abuse_records') or user_id not in self.abuse_records:
+                self._init_user_records(user_id)
             
             # 记录当前请求
             self.abuse_records[user_id].append(current_time)
@@ -590,41 +756,46 @@ class DailyLimitPlugin(star.Star):
             cutoff_time = current_time - 3600
             self.abuse_records[user_id] = [t for t in self.abuse_records[user_id] if t > cutoff_time]
             
-            # 更新统计信息
-            stats = self.abuse_stats[user_id]
-            time_since_last = current_time - stats["last_request_time"] if stats["last_request_time"] > 0 else float('inf')
-            
-            # 检测快速请求
-            recent_requests = [t for t in self.abuse_records[user_id] if t > current_time - self.rapid_request_window]
-            if len(recent_requests) >= self.rapid_request_threshold:
+        except Exception as e:
+            self._log_error("记录用户请求失败 - 用户 {}: {}", user_id, str(e))
+            # 记录失败不影响主要功能，继续执行
+    
+    def _detect_rapid_requests(self, user_id, current_time):
+        """检测快速请求异常"""
+        recent_requests = [t for t in self.abuse_records[user_id] 
+                          if t > current_time - self.rapid_request_window]
+        
+        if len(recent_requests) >= self.rapid_request_threshold:
+            return {
+                "is_abuse": True,
+                "reason": f"快速请求异常：{len(recent_requests)}次/{self.rapid_request_window}秒",
+                "type": "rapid_request",
+                "count": len(recent_requests)
+            }
+        return {"is_abuse": False, "reason": "快速请求正常"}
+    
+    def _detect_consecutive_requests(self, user_id, current_time):
+        """检测连续请求异常"""
+        stats = self.abuse_stats[user_id]
+        time_since_last = current_time - stats["last_request_time"] if stats["last_request_time"] > 0 else float('inf')
+        
+        if time_since_last <= self.consecutive_request_window:
+            stats["consecutive_count"] += 1
+            if stats["consecutive_count"] >= self.consecutive_request_threshold:
                 return {
                     "is_abuse": True,
-                    "reason": f"快速请求异常：{len(recent_requests)}次/{self.rapid_request_window}秒",
-                    "type": "rapid_request",
-                    "count": len(recent_requests)
+                    "reason": f"连续请求异常：{stats['consecutive_count']}次连续请求",
+                    "type": "consecutive_request",
+                    "count": stats["consecutive_count"]
                 }
-            
-            # 检测连续请求
-            if time_since_last <= self.consecutive_request_window:
-                stats["consecutive_count"] += 1
-                if stats["consecutive_count"] >= self.consecutive_request_threshold:
-                    return {
-                        "is_abuse": True,
-                        "reason": f"连续请求异常：{stats['consecutive_count']}次连续请求",
-                        "type": "consecutive_request",
-                        "count": stats["consecutive_count"]
-                    }
-            else:
-                stats["consecutive_count"] = 1
-            
-            # 更新最后请求时间
-            stats["last_request_time"] = current_time
-            
-            return {"is_abuse": False, "reason": "正常使用"}
-            
-        except Exception as e:
-            self._log_error("检测异常使用行为失败: {}", str(e))
-            return {"is_abuse": False, "reason": "检测失败"}
+        else:
+            stats["consecutive_count"] = 1
+        
+        return {"is_abuse": False, "reason": "连续请求正常"}
+    
+    def _update_user_stats(self, user_id, current_time):
+        """更新用户统计信息"""
+        self.abuse_stats[user_id]["last_request_time"] = current_time
 
     async def _block_user_for_abuse(self, user_id, reason, duration=None):
         """限制用户使用
@@ -1746,7 +1917,7 @@ class DailyLimitPlugin(star.Star):
         
         return self._get_custom_message(
             "limit_status_group_shared_message",
-            "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
             limit_type=limit_type,
             usage=usage,
             limit=limit,
@@ -1766,7 +1937,7 @@ class DailyLimitPlugin(star.Star):
         
         return self._get_custom_message(
             "limit_status_group_individual_message",
-            "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
             limit_type=limit_type,
             usage=usage,
             limit=limit,
@@ -1785,7 +1956,7 @@ class DailyLimitPlugin(star.Star):
         
         return self._get_custom_message(
             "limit_status_private_message",
-            "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
             usage=usage,
             limit=limit,
             progress_bar=progress_bar,
@@ -1853,7 +2024,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.7.1 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.7.2 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -1917,7 +2088,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.7.1 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.7.2 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -1934,9 +2105,9 @@ class DailyLimitPlugin(star.Star):
             "zero_usage_message": "您的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
             "zero_usage_group_shared_message": "本群组AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
             "zero_usage_group_individual_message": "您在本群组的AI访问次数已达上限（{usage}/{limit}），请稍后再试或联系管理员提升限额。",
-            "limit_status_private_message": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-            "limit_status_group_shared_message": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
-            "limit_status_group_individual_message": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n📝 使用 /限制帮助 查看详细说明\n🔄 每日重置时间：{reset_time}",
+            "limit_status_private_message": "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
+            "limit_status_group_shared_message": "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
+            "limit_status_group_individual_message": "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
             "limit_status_exempt_message": "🎉 您{group_context}没有调用次数限制（豁免用户）",
             "limit_status_time_period_message": "\n\n⏰ 当前处于时间段限制：{start_time}-{end_time}\n📋 时间段限制：{time_period_limit} 次\n📊 时间段内已使用：{time_period_usage}/{time_period_limit} 次\n📈 {time_period_progress}\n🎯 时间段内剩余：{time_period_remaining} 次"
         }
@@ -2411,13 +2582,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.7.1 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.7.2 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.7.1 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.7.2 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -3682,7 +3853,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.7.1")
+            current_version = self.config.get("version", "v2.7.2")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -3820,7 +3991,7 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.7.1")
+            current_version = self.config.get("version", "v2.7.2")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
@@ -3851,7 +4022,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.7.1")
+            current_version = self.config.get("version", "v2.7.2")
             
             # 构建版本信息消息
             version_msg = f"📦 日调用限制插件版本信息\n"
