@@ -9,7 +9,7 @@ Web管理界面服务器
 - 密码保护的安全访问
 
 版本: v2.6.8
-作者: AstrBot插件开发团队
+作者: Sakura520222
 """
 import json
 import datetime
@@ -506,6 +506,51 @@ class WebServer:
         users_data.sort(key=lambda x: x['usage_count'], reverse=True)
         return users_data
 
+    def _get_period_days(self, period):
+        """根据周期类型获取分析天数
+        
+        参数：
+            period (str): 分析周期，支持 'day', 'week', 'month'
+            
+        返回：
+            int: 分析天数
+        """
+        period_days_map = {
+            'day': 7,    # 最近7天
+            'week': 28,  # 最近4周
+            'month': 90  # 最近3个月
+        }
+        return period_days_map.get(period, 28)  # 默认最近4周
+
+    def _generate_trends_data_points(self, days):
+        """生成趋势数据点
+        
+        参数：
+            days (int): 分析天数
+            
+        返回：
+            list: 趋势数据点列表
+        """
+        trends_data = []
+        today = datetime.datetime.now()
+        
+        for i in range(days):
+            date = today - datetime.timedelta(days=i)
+            date_str = date.strftime("%Y-%m-%d")
+            
+            # 获取该日期的统计数据
+            stats = self._get_daily_stats(date_str)
+            trends_data.append({
+                'date': date_str,
+                'total_requests': stats['total_requests'],
+                'active_users': stats['active_users'],
+                'active_groups': stats['active_groups']
+            })
+        
+        # 按日期排序（从早到晚）
+        trends_data.sort(key=lambda x: x['date'])
+        return trends_data
+
     def _get_trends_data(self, period='week'):
         """
         获取趋势分析数据
@@ -521,33 +566,10 @@ class WebServer:
         
         try:
             # 根据周期确定分析天数
-            if period == 'day':
-                days = 7  # 最近7天
-            elif period == 'week':
-                days = 28  # 最近4周
-            elif period == 'month':
-                days = 90  # 最近3个月
-            else:
-                days = 28  # 默认最近4周
+            days = self._get_period_days(period)
             
-            trends_data = []
-            today = datetime.datetime.now()
-            
-            for i in range(days):
-                date = today - datetime.timedelta(days=i)
-                date_str = date.strftime("%Y-%m-%d")
-                
-                # 获取该日期的统计数据
-                stats = self._get_daily_stats(date_str)
-                trends_data.append({
-                    'date': date_str,
-                    'total_requests': stats['total_requests'],
-                    'active_users': stats['active_users'],
-                    'active_groups': stats['active_groups']
-                })
-            
-            # 按日期排序（从早到晚）
-            trends_data.sort(key=lambda x: x['date'])
+            # 生成趋势数据点
+            trends_data = self._generate_trends_data_points(days)
             
             return {
                 'period': period,

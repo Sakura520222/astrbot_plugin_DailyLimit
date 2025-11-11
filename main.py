@@ -1561,6 +1561,71 @@ class DailyLimitPlugin(star.Star):
         # 更新全局统计
         self.redis.hincrby(keys_to_update["global_stats"], "total_requests", 1)
 
+    def _get_daily_trend_data(self, days: int, current_time: datetime.datetime) -> dict:
+        """获取日趋势数据
+        
+        参数：
+            days: 查询天数
+            current_time: 当前时间
+            
+        返回：
+            dict: 日趋势数据
+        """
+        trend_data = {}
+        for i in range(days):
+            date_obj = current_time - datetime.timedelta(days=i)
+            date_key = date_obj.strftime("%Y-%m-%d")
+            trend_key = self._get_trend_stats_key("daily", date_key)
+            
+            data = self._get_trend_stats_by_key(trend_key)
+            if data:
+                trend_data[date_key] = data
+        return trend_data
+
+    def _get_weekly_trend_data(self, weeks: int, current_time: datetime.datetime) -> dict:
+        """获取周趋势数据
+        
+        参数：
+            weeks: 查询周数
+            current_time: 当前时间
+            
+        返回：
+            dict: 周趋势数据
+        """
+        trend_data = {}
+        for i in range(weeks):
+            date_obj = current_time - datetime.timedelta(weeks=i)
+            week_number = self._get_week_number(date_obj)
+            year = date_obj.year
+            week_key = f"{year}-W{week_number}"
+            trend_key = self._get_trend_stats_key("weekly", week_key)
+            
+            data = self._get_trend_stats_by_key(trend_key)
+            if data:
+                trend_data[week_key] = data
+        return trend_data
+
+    def _get_monthly_trend_data(self, months: int, current_time: datetime.datetime) -> dict:
+        """获取月趋势数据
+        
+        参数：
+            months: 查询月数
+            current_time: 当前时间
+            
+        返回：
+            dict: 月趋势数据
+        """
+        trend_data = {}
+        for i in range(months):
+            date_obj = current_time - datetime.timedelta(days=30*i)
+            month_key = self._get_month_key(date_obj)
+            trend_key = self._get_trend_stats_key("monthly", month_key)
+            
+            data = self._get_trend_stats_by_key(trend_key)
+            if data:
+                trend_data[month_key] = data
+        return trend_data
+
     def _get_trend_data(self, period_type, days=7):
         """获取趋势数据
         
@@ -1572,46 +1637,17 @@ class DailyLimitPlugin(star.Star):
             return {}
             
         try:
-            trend_data = {}
             current_time = datetime.datetime.now()
             
             if period_type == "daily":
-                # 获取最近days天的日趋势数据
-                for i in range(days):
-                    date_obj = current_time - datetime.timedelta(days=i)
-                    date_key = date_obj.strftime("%Y-%m-%d")
-                    trend_key = self._get_trend_stats_key("daily", date_key)
-                    
-                    data = self._get_trend_stats_by_key(trend_key)
-                    if data:
-                        trend_data[date_key] = data
-                        
+                return self._get_daily_trend_data(days, current_time)
             elif period_type == "weekly":
-                # 获取最近4周的周趋势数据
-                for i in range(4):
-                    date_obj = current_time - datetime.timedelta(weeks=i)
-                    week_number = self._get_week_number(date_obj)
-                    year = date_obj.year
-                    week_key = f"{year}-W{week_number}"
-                    trend_key = self._get_trend_stats_key("weekly", week_key)
-                    
-                    data = self._get_trend_stats_by_key(trend_key)
-                    if data:
-                        trend_data[week_key] = data
-                        
+                return self._get_weekly_trend_data(4, current_time)
             elif period_type == "monthly":
-                # 获取最近6个月的月趋势数据
-                for i in range(6):
-                    date_obj = current_time - datetime.timedelta(days=30*i)
-                    month_key = self._get_month_key(date_obj)
-                    trend_key = self._get_trend_stats_key("monthly", month_key)
-                    
-                    data = self._get_trend_stats_by_key(trend_key)
-                    if data:
-                        trend_data[month_key] = data
-                        
-            return trend_data
-            
+                return self._get_monthly_trend_data(6, current_time)
+            else:
+                return {}
+                
         except Exception as e:
             self._log_error("获取趋势数据失败: {}", str(e))
             return {}
@@ -1654,49 +1690,104 @@ class DailyLimitPlugin(star.Star):
             self._log_error("解析趋势统计数据失败: {}", str(e))
             return None
 
+    def _extract_trend_metrics(self, trend_data):
+        """从趋势数据中提取关键指标
+        
+        参数：
+            trend_data: 趋势数据字典
+            
+        返回：
+            tuple: (total_requests, active_users, active_groups, dates)
+        """
+        total_requests = []
+        active_users = []
+        active_groups = []
+        dates = list(trend_data.keys())
+        
+        for date in dates:
+            data = trend_data[date]
+            total_requests.append(data.get("total_requests", 0))
+            active_users.append(data.get("active_users", 0))
+            active_groups.append(data.get("active_groups", 0))
+        
+        return total_requests, active_users, active_groups, dates
+
+    def _calculate_growth_rate(self, total_requests):
+        """计算增长率
+        
+        参数：
+            total_requests: 总请求数列表
+            
+        返回：
+            float: 增长率百分比
+        """
+        if len(total_requests) > 1:
+            current_total = total_requests[-1]
+            previous_total = total_requests[-2]
+            if previous_total > 0:
+                return ((current_total - previous_total) / previous_total) * 100
+            else:
+                return 100 if current_total > 0 else 0
+        else:
+            return 0
+
+    def _generate_summary_section(self, total_requests, active_users, active_groups, growth_rate):
+        """生成趋势报告摘要部分
+        
+        参数：
+            total_requests: 总请求数列表
+            active_users: 活跃用户数列表
+            active_groups: 活跃群组数列表
+            growth_rate: 增长率
+            
+        返回：
+            str: 摘要部分文本
+        """
+        summary = "📈 使用趋势分析报告\n"
+        summary += "═══════════════\n\n"
+        
+        summary += f"📊 总请求数趋势: {total_requests[-1]} 次\n"
+        summary += f"📈 增长率: {growth_rate:+.1f}%\n"
+        summary += f"👤 活跃用户数: {active_users[-1]} 人\n"
+        summary += f"👥 活跃群组数: {active_groups[-1]} 个\n\n"
+        
+        return summary
+
+    def _generate_detailed_section(self, trend_data, dates):
+        """生成详细趋势数据部分
+        
+        参数：
+            trend_data: 趋势数据字典
+            dates: 日期列表
+            
+        返回：
+            str: 详细数据部分文本
+        """
+        detailed = "📅 详细趋势数据:\n"
+        for i, date in enumerate(dates):
+            data = trend_data[date]
+            detailed += f"• {date}: {data.get('total_requests', 0)} 次请求, {data.get('active_users', 0)} 活跃用户\n"
+        
+        return detailed
+
     def _analyze_trends(self, trend_data):
         """分析趋势数据，生成趋势报告"""
         if not trend_data:
             return "暂无趋势数据"
             
         try:
-            # 计算总请求数趋势
-            total_requests = []
-            active_users = []
-            active_groups = []
-            dates = list(trend_data.keys())
-            
-            for date in dates:
-                data = trend_data[date]
-                total_requests.append(data.get("total_requests", 0))
-                active_users.append(data.get("active_users", 0))
-                active_groups.append(data.get("active_groups", 0))
+            # 提取关键指标
+            total_requests, active_users, active_groups, dates = self._extract_trend_metrics(trend_data)
             
             # 计算增长率
-            if len(total_requests) > 1:
-                current_total = total_requests[-1]
-                previous_total = total_requests[-2]
-                if previous_total > 0:
-                    growth_rate = ((current_total - previous_total) / previous_total) * 100
-                else:
-                    growth_rate = 100 if current_total > 0 else 0
-            else:
-                growth_rate = 0
+            growth_rate = self._calculate_growth_rate(total_requests)
             
-            # 生成趋势报告
-            trend_report = "📈 使用趋势分析报告\n"
-            trend_report += "═══════════════\n\n"
+            # 生成报告各部分
+            summary = self._generate_summary_section(total_requests, active_users, active_groups, growth_rate)
+            detailed = self._generate_detailed_section(trend_data, dates)
             
-            trend_report += f"📊 总请求数趋势: {total_requests[-1]} 次\n"
-            trend_report += f"📈 增长率: {growth_rate:+.1f}%\n"
-            trend_report += f"👤 活跃用户数: {active_users[-1]} 人\n"
-            trend_report += f"👥 活跃群组数: {active_groups[-1]} 个\n\n"
-            
-            # 添加详细趋势
-            trend_report += "📅 详细趋势数据:\n"
-            for i, date in enumerate(dates):
-                data = trend_data[date]
-                trend_report += f"• {date}: {data.get('total_requests', 0)} 次请求, {data.get('active_users', 0)} 活跃用户\n"
+            # 组合完整报告
+            trend_report = summary + detailed
             
             return trend_report
             
