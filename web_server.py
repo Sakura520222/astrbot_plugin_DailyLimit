@@ -9,7 +9,7 @@ Web管理界面服务器
 - 密码保护的安全访问
 
 版本: v2.6.8
-作者: AstrBot插件开发团队
+作者: Sakura520222
 """
 import json
 import datetime
