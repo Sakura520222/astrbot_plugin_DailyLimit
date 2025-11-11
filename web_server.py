@@ -225,6 +225,7 @@ class WebServer:
         self._setup_config_api()
         self._setup_users_api()
         self._setup_groups_api()
+        self._setup_trends_api()
 
     def _setup_stats_api(self):
         """设置统计API路由"""
@@ -274,6 +275,30 @@ class WebServer:
         def get_groups():
             """获取群组使用情况"""
             return self._handle_api_request(self._get_groups_data)
+
+    def _setup_trends_api(self):
+        """设置趋势分析API路由"""
+        @self.app.route('/api/trends')
+        @self.require_auth
+        def get_trends():
+            """获取趋势分析数据"""
+            try:
+                period = request.args.get('period', 'week')
+                data = self._get_trends_data(period)
+                return jsonify({
+                    'success': True,
+                    'data': data
+                })
+            except Exception as e:
+                if self.plugin:
+                    self.plugin._log_error("获取趋势分析数据失败: {}", str(e))
+                else:
+                    print(f"获取趋势分析数据失败: {e}")
+                
+                return jsonify({
+                    'success': False,
+                    'error': '获取趋势分析数据失败'
+                }), 500
 
     def _handle_api_request(self, api_function):
         """处理API请求的通用方法"""
@@ -480,6 +505,79 @@ class WebServer:
         """对用户数据进行排序"""
         users_data.sort(key=lambda x: x['usage_count'], reverse=True)
         return users_data
+
+    def _get_trends_data(self, period='week'):
+        """
+        获取趋势分析数据
+        
+        参数：
+            period (str): 分析周期，支持 'day', 'week', 'month'
+            
+        返回：
+            dict: 趋势分析数据，包含日期、总请求数、活跃用户数、活跃群组数等
+        """
+        if not self.plugin or not self.plugin.redis:
+            return {}
+        
+        try:
+            # 根据周期确定分析天数
+            if period == 'day':
+                days = 7  # 最近7天
+            elif period == 'week':
+                days = 28  # 最近4周
+            elif period == 'month':
+                days = 90  # 最近3个月
+            else:
+                days = 28  # 默认最近4周
+            
+            trends_data = []
+            today = datetime.datetime.now()
+            
+            for i in range(days):
+                date = today - datetime.timedelta(days=i)
+                date_str = date.strftime("%Y-%m-%d")
+                
+                # 获取该日期的统计数据
+                stats = self._get_daily_stats(date_str)
+                trends_data.append({
+                    'date': date_str,
+                    'total_requests': stats['total_requests'],
+                    'active_users': stats['active_users'],
+                    'active_groups': stats['active_groups']
+                })
+            
+            # 按日期排序（从早到晚）
+            trends_data.sort(key=lambda x: x['date'])
+            
+            return {
+                'period': period,
+                'days': days,
+                'data': trends_data
+            }
+            
+        except Exception as e:
+            if self.plugin:
+                self.plugin._log_error("获取趋势分析数据失败: {}", str(e))
+            else:
+                print(f"获取趋势分析数据失败: {e}")
+            return {}
+
+    def _get_daily_stats(self, date_str):
+        """获取指定日期的统计数据"""
+        stats = self._initialize_stats_dict(date_str)
+        
+        # 获取活跃用户数
+        user_keys = self._get_user_keys_for_date(date_str)
+        stats['active_users'] = len(user_keys)
+        
+        # 获取活跃群组数
+        group_keys = self._get_group_keys_for_date(date_str)
+        stats['active_groups'] = len(group_keys)
+        
+        # 计算总请求数
+        stats['total_requests'] = self._calculate_total_requests(user_keys)
+        
+        return stats
     
     def _get_groups_data(self):
         """
