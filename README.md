@@ -1,8 +1,8 @@
-# 🚀 AstrBot 日调用限制插件 v2.7.3
+# 🚀 AstrBot 日调用限制插件 v2.7.4
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.7.3-blue)
+![Version](https://img.shields.io/badge/版本-v2.7.4-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -45,6 +45,9 @@
 ## 📖 简介
 
 AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专为AstrBot设计。通过智能的每日调用限制机制，有效防止大模型API的滥用，确保AI服务的稳定性和公平性。
+
+## 🔄 版本更新
+[更新日志](./change_log.md)
 
 ## ✨ 核心特性
 
@@ -92,7 +95,7 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 - **限制时长配置**：支持自定义防刷限制时长，灵活应对不同场景
 - **防重复通知**：新增防重复通知功能，避免同一用户重复触发限制时重复发送提醒消息
 
-### 📈 趋势分析功能 (v2.7.3新增)
+### 📈 趋势分析功能 (v2.7.3+)
 - **多周期趋势分析**：支持日、周、月三种时间维度的使用趋势分析
 - **多指标统计**：提供用户活跃度、使用频率、使用量分布等多维度指标
 - **Web界面集成**：在Web管理界面中集成趋势分析图表，支持Chart.js可视化
@@ -436,9 +439,6 @@ Redis是插件的数据存储后端，必须正确配置才能正常运行。
 - **Web界面访问**：通过`/limit trends`命令获取Web管理界面地址，登录后可查看趋势分析图表
 - **API数据获取**：通过`/limit trends_api <周期>`命令直接获取趋势分析数据，支持`day`、`week`、`month`三种周期
 - **多维度分析**：提供用户活跃度、使用频率、使用量分布等多维度趋势数据
-
-## 🔄 版本更新
-[版本日志](./change_log.md)
 
 ## 🤝 贡献指南
 
