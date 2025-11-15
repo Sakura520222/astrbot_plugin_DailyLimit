@@ -112,21 +112,34 @@ class WebServer:
         # 检查原始端口是否可用
         if self._is_port_available(self.original_port):
             self.port = self.original_port
-            print(f"Web管理界面将使用默认端口: {self.port}")
+            self._log(f"Web管理界面将使用默认端口: {self.port}")
             return
         
         # 端口被占用，查找可用端口
         available_port = self._find_available_port()
         if available_port:
             self.port = available_port
-            print(f"警告: 默认端口 {self.original_port} 被占用，已自动切换到端口: {self.port}")
+            self._log(f"警告: 默认端口 {self.original_port} 被占用，已自动切换到端口: {self.port}")
             
             # 保存新端口到配置
             self._save_port_to_config(available_port)
         else:
             # 没有找到可用端口，使用原始端口（可能会启动失败）
             self.port = self.original_port
-            print(f"警告: 无法找到可用端口，将尝试使用端口: {self.port}（可能会启动失败）")
+            self._log(f"警告: 无法找到可用端口，将尝试使用端口: {self.port}（可能会启动失败）")
+    
+    def _force_release_port(self, port):
+        """强制释放指定端口的占用"""
+        try:
+            # 尝试创建socket并绑定到指定端口，然后立即关闭
+            # 这有助于释放可能处于TIME_WAIT状态的端口
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.host, port))
+            sock.close()
+            self._log(f"尝试释放端口 {port} 完成")
+        except Exception as e:
+            self._log(f"尝试释放端口 {port} 失败: {e}")
     
     def _save_port_to_config(self, port):
         """保存端口到配置文件"""
@@ -765,6 +778,10 @@ class WebServer:
 
     def _adjust_port_if_needed(self):
         """检查并调整端口"""
+        # 首先尝试强制释放端口
+        self._force_release_port(self.port)
+        
+        # 再次检查端口是否可用
         if not self._is_port_available(self.port):
             self.port = self._find_available_port()
             self._log(f"端口被占用，自动切换到端口: {self.port}")
@@ -862,18 +879,37 @@ class WebServer:
             bool: 停止成功返回True，失败返回False
         """
         try:
+            self._log("开始停止Web服务器...")
+            
             # 记录停止前的状态
             previous_status = self.get_status()
+            self._log(f"停止前服务器状态: {previous_status}")
             
             self._server_running = False
             
             # 优雅停止服务器实例
             if self._server_instance:
-                self._server_instance.shutdown()
+                self._log("正在关闭服务器实例...")
+                try:
+                    self._server_instance.shutdown()
+                    self._log("服务器实例已关闭")
+                except Exception as e:
+                    self._log(f"关闭服务器实例时出现异常: {e}")
                 
             # 等待线程结束
             if self._server_thread and self._server_thread.is_alive():
-                self._server_thread.join(timeout=5)
+                self._log("正在等待服务器线程结束...")
+                self._server_thread.join(timeout=10)  # 增加超时时间到10秒
+                if self._server_thread.is_alive():
+                    self._log("警告: 服务器线程未能在超时时间内结束")
+                else:
+                    self._log("服务器线程已结束")
+                
+            # 强制释放端口
+            try:
+                self._force_release_port(self.port)
+            except Exception as e:
+                self._log(f"释放端口时出现异常: {e}")
                 
             # 清理资源
             self._server_instance = None
