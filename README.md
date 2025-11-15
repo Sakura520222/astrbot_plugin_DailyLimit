@@ -1,8 +1,8 @@
-# 🚀 AstrBot 日调用限制插件 v2.7.3
+# 🚀 AstrBot 日调用限制插件
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.7.3-blue)
+![Version](https://img.shields.io/badge/版本-v2.7.4-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -95,7 +95,7 @@ AstrBot 日调用限制插件是一个功能强大的AI资源管理工具，专�
 - **限制时长配置**：支持自定义防刷限制时长，灵活应对不同场景
 - **防重复通知**：新增防重复通知功能，避免同一用户重复触发限制时重复发送提醒消息
 
-### 📈 趋势分析功能 (v2.7.3新增)
+### 📈 趋势分析功能 (v2.7.3+)
 - **多周期趋势分析**：支持日、周、月三种时间维度的使用趋势分析
 - **多指标统计**：提供用户活跃度、使用频率、使用量分布等多维度指标
 - **Web界面集成**：在Web管理界面中集成趋势分析图表，支持Chart.js可视化
