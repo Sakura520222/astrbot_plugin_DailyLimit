@@ -885,48 +885,91 @@ class WebServer:
             previous_status = self.get_status()
             self._log(f"停止前服务器状态: {previous_status}")
             
+            # 设置停止标志
             self._server_running = False
             
-            # 优雅停止服务器实例
-            if self._server_instance:
-                self._log("正在关闭服务器实例...")
-                try:
-                    self._server_instance.shutdown()
-                    self._log("服务器实例已关闭")
-                except Exception as e:
-                    self._log(f"关闭服务器实例时出现异常: {e}")
-                
-            # 等待线程结束
-            if self._server_thread and self._server_thread.is_alive():
-                self._log("正在等待服务器线程结束...")
-                self._server_thread.join(timeout=10)  # 增加超时时间到10秒
-                if self._server_thread.is_alive():
-                    self._log("警告: 服务器线程未能在超时时间内结束")
-                else:
-                    self._log("服务器线程已结束")
-                
-            # 强制释放端口
-            try:
-                self._force_release_port(self.port)
-            except Exception as e:
-                self._log(f"释放端口时出现异常: {e}")
-                
-            # 清理资源
-            self._server_instance = None
-            self._server_thread = None
-            self._start_time = None
+            # 执行停止流程
+            self._stop_server_instance()
+            self._wait_for_thread_termination()
+            self._release_port()
+            self._cleanup_resources()
             
             self._log("Web服务器已停止")
             return True
             
         except Exception as e:
-            error_msg = f"停止Web服务器失败: {str(e)}"
-            self._last_error = error_msg
-            if self.plugin:
-                self.plugin._log_error(error_msg)
-            else:
-                print(error_msg)
+            self._handle_stop_error(e)
             return False
+    
+    def _stop_server_instance(self):
+        """
+        优雅停止服务器实例
+        
+        负责关闭服务器实例，处理可能的异常情况。
+        """
+        if not self._server_instance:
+            return
+            
+        self._log("正在关闭服务器实例...")
+        try:
+            self._server_instance.shutdown()
+            self._log("服务器实例已关闭")
+        except Exception as e:
+            self._log(f"关闭服务器实例时出现异常: {e}")
+    
+    def _wait_for_thread_termination(self):
+        """
+        等待服务器线程结束
+        
+        负责等待线程正常结束，处理超时情况。
+        """
+        if not self._server_thread or not self._server_thread.is_alive():
+            return
+            
+        self._log("正在等待服务器线程结束...")
+        self._server_thread.join(timeout=10)  # 超时时间10秒
+        
+        if self._server_thread.is_alive():
+            self._log("警告: 服务器线程未能在超时时间内结束")
+        else:
+            self._log("服务器线程已结束")
+    
+    def _release_port(self):
+        """
+        强制释放端口
+        
+        负责释放被占用的端口资源。
+        """
+        try:
+            self._force_release_port(self.port)
+        except Exception as e:
+            self._log(f"释放端口时出现异常: {e}")
+    
+    def _cleanup_resources(self):
+        """
+        清理资源
+        
+        负责清理所有相关资源，重置状态。
+        """
+        self._server_instance = None
+        self._server_thread = None
+        self._start_time = None
+    
+    def _handle_stop_error(self, error):
+        """
+        处理停止过程中的错误
+        
+        负责记录错误信息并通知相关组件。
+        
+        参数：
+            error (Exception): 发生的异常
+        """
+        error_msg = f"停止Web服务器失败: {str(error)}"
+        self._last_error = error_msg
+        if self.plugin:
+            self.plugin._log_error(error_msg)
+        else:
+            print(error_msg)
 
 if __name__ == "__main__":
     # 测试用
