@@ -573,6 +573,137 @@
                 padding: 12px 15px;
             }
         }
+        
+        /* 模态框样式 */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 245, 250, 0.98) 100%);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 0;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(255, 105, 180, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, rgba(255, 240, 245, 0.9) 0%, rgba(255, 228, 230, 0.9) 100%);
+            padding: 20px 25px;
+            border-bottom: 2px solid rgba(255, 182, 193, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 20px 20px 0 0;
+        }
+        
+        .modal-header h3 {
+            color: #d63384;
+            margin: 0;
+            font-size: 1.3rem;
+        }
+        
+        .close {
+            color: #8b5a7c;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .close:hover {
+            color: #d63384;
+            transform: scale(1.1);
+        }
+        
+        .modal-body {
+            padding: 25px;
+        }
+        
+        .modal-footer {
+            padding: 20px 25px;
+            border-top: 2px solid rgba(255, 182, 193, 0.3);
+            display: flex;
+            gap: 15px;
+            justify-content: flex-end;
+            border-radius: 0 0 20px 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #d63384;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid rgba(255, 182, 193, 0.3);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #5a3d5c;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #ff9eb5;
+            box-shadow: 0 0 0 3px rgba(255, 158, 181, 0.2);
+        }
+        
+        .form-textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 12px 15px;
+            border: 2px solid rgba(255, 182, 193, 0.3);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #5a3d5c;
+            font-size: 0.95rem;
+            resize: vertical;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        
+        .form-textarea:focus {
+            outline: none;
+            border-color: #ff9eb5;
+            box-shadow: 0 0 0 3px rgba(255, 158, 181, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -690,8 +821,50 @@
         <div class="data-section">
             <div class="section-header">
                 <div class="section-title">⚙️ 配置信息</div>
+                <button class="refresh-btn" onclick="openConfigEditor()" style="background: linear-gradient(135deg, #ff9eb5, #ff6b8b);">🌸 编辑配置</button>
             </div>
             <div id="configContent" class="loading">正在加载配置...</div>
+        </div>
+
+        <!-- 配置编辑模态框 -->
+        <div id="configModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🌸 编辑配置</h3>
+                    <span class="close" onclick="closeConfigEditor()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="defaultDailyLimit">默认每日限制:</label>
+                        <input type="number" id="defaultDailyLimit" min="1" max="1000" class="form-input">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="exemptUsers">豁免用户 (每行一个用户ID):</label>
+                        <textarea id="exemptUsers" class="form-textarea" placeholder="请输入用户ID，每行一个"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="priorityUsers">优先级用户 (每行一个用户ID):</label>
+                        <textarea id="priorityUsers" class="form-textarea" placeholder="请输入用户ID，每行一个"></textarea>
+                        <small style="color: #8b5a7c; font-size: 0.8rem;">优先级用户将获得更高的使用限制</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="groupLimits">群组限制 (格式: 群组ID=限制次数):</label>
+                        <textarea id="groupLimits" class="form-textarea" placeholder="例如: 123456=50\n789012=30"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userLimits">用户限制 (格式: 用户ID=限制次数):</label>
+                        <textarea id="userLimits" class="form-textarea" placeholder="例如: 123456=50\n789012=30"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="refresh-btn" onclick="saveConfig()" style="background: linear-gradient(135deg, #28a745, #20c997);">🌸 保存配置</button>
+                    <button class="refresh-btn" onclick="closeConfigEditor()" style="background: linear-gradient(135deg, #6c757d, #adb5bd);">🌸 取消</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -893,6 +1066,7 @@
                 // 解析文本格式的群组限制和用户限制
                 const groupLimitsCount = config.group_limits ? config.group_limits.trim().split('\n').filter(line => line.trim()).length : 0;
                 const userLimitsCount = config.user_limits ? config.user_limits.trim().split('\n').filter(line => line.trim()).length : 0;
+                const priorityUsersCount = config.priority_users ? config.priority_users.length : 0;
                 
                 configContent.innerHTML = `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
@@ -904,6 +1078,10 @@
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 豁免用户</h4>
                             <p>${config.exempt_users.length > 0 ? config.exempt_users.join(', ') : '无豁免用户'}</p>
+                        </div>
+                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff85a1;">
+                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 优先级用户</h4>
+                            <p>${priorityUsersCount > 0 ? config.priority_users.join(', ') : '无优先级用户'}</p>
                         </div>
                         <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
                             <h4 style="color: #d63384; margin-bottom: 8px;">🌸 群组限制</h4>
@@ -1294,6 +1472,128 @@
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth' });
             }
+        }
+        
+        // 配置编辑相关函数
+        let currentConfig = null;
+        
+        function openConfigEditor() {
+            // 加载当前配置到表单
+            loadConfigToForm();
+            
+            // 显示模态框
+            const modal = document.getElementById('configModal');
+            modal.style.display = 'flex';
+            
+            // 添加ESC键关闭功能
+            document.addEventListener('keydown', handleEscKey);
+        }
+        
+        function closeConfigEditor() {
+            const modal = document.getElementById('configModal');
+            modal.style.display = 'none';
+            
+            // 移除ESC键监听
+            document.removeEventListener('keydown', handleEscKey);
+        }
+        
+        function handleEscKey(event) {
+            if (event.key === 'Escape') {
+                closeConfigEditor();
+            }
+        }
+        
+        async function loadConfigToForm() {
+            try {
+                const response = await axios.get('/api/config');
+                
+                if (response.data.success) {
+                    currentConfig = response.data.data;
+                    
+                    // 填充表单
+                    document.getElementById('defaultDailyLimit').value = currentConfig.default_daily_limit;
+                    document.getElementById('exemptUsers').value = currentConfig.exempt_users.join('\n');
+                    document.getElementById('priorityUsers').value = currentConfig.priority_users ? currentConfig.priority_users.join('\n') : '';
+                    document.getElementById('groupLimits').value = currentConfig.group_limits;
+                    document.getElementById('userLimits').value = currentConfig.user_limits;
+                } else {
+                    throw new Error(response.data.error);
+                }
+            } catch (error) {
+                console.error('加载配置到表单失败:', error);
+                showError('加载配置失败: ' + error.message);
+            }
+        }
+        
+        async function saveConfig() {
+            try {
+                // 收集表单数据
+                const configData = {
+                    default_daily_limit: parseInt(document.getElementById('defaultDailyLimit').value),
+                    exempt_users: document.getElementById('exemptUsers').value.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0),
+                    priority_users: document.getElementById('priorityUsers').value.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0),
+                    group_limits: document.getElementById('groupLimits').value,
+                    user_limits: document.getElementById('userLimits').value
+                };
+                
+                // 验证数据
+                if (configData.default_daily_limit < 1 || configData.default_daily_limit > 1000) {
+                    throw new Error('默认每日限制必须在1-1000之间');
+                }
+                
+                // 验证豁免用户和优先级用户格式
+                const validateUserIds = (users, fieldName) => {
+                    for (const userId of users) {
+                        if (!/^\d+$/.test(userId)) {
+                            throw new Error(`${fieldName}中的用户ID必须是纯数字: ${userId}`);
+                        }
+                    }
+                };
+                
+                validateUserIds(configData.exempt_users, '豁免用户');
+                validateUserIds(configData.priority_users, '优先级用户');
+                
+                // 发送保存请求
+                const response = await axios.post('/api/config', configData);
+                
+                if (response.data.success) {
+                    // 关闭模态框
+                    closeConfigEditor();
+                    
+                    // 重新加载配置显示
+                    await loadConfig();
+                    
+                    // 显示成功消息
+                    showSuccess('配置保存成功！');
+                } else {
+                    throw new Error(response.data.error);
+                }
+            } catch (error) {
+                console.error('保存配置失败:', error);
+                showError('保存配置失败: ' + error.message);
+            }
+        }
+        
+        function showSuccess(message) {
+            // 创建成功提示
+            const successDiv = document.createElement('div');
+            successDiv.className = 'error';
+            successDiv.style.background = 'linear-gradient(135deg, rgba(220, 255, 220, 0.9) 0%, rgba(200, 255, 200, 0.9) 100%)';
+            successDiv.style.borderLeft = '4px solid #28a745';
+            successDiv.textContent = '成功: ' + message;
+            
+            // 添加到页面顶部
+            const container = document.querySelector('.container');
+            container.insertBefore(successDiv, container.firstChild);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                successDiv.remove();
+            }, 3000);
         }
         
 
