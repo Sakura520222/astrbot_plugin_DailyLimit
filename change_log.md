@@ -1,5 +1,7 @@
 ### v2.7.6 (2025-11-26)
 
+#### 修复WebUI中使用趋势无法正常显示
+
 #### 🔧 代码质量优化
 - **Web服务器stop函数重构** - 将59行的长函数重构为5个单一职责的子函数，显著提升代码可读性和可维护性
 - **函数职责分离** - 将stop函数拆分为`_stop_server_instance`、`_wait_for_thread_termination`、`_release_port`、`_cleanup_resources`、`_handle_stop_error`等子函数
