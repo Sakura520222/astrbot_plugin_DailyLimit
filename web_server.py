@@ -8,7 +8,7 @@ Web管理界面服务器
 - 实时统计信息监控
 - 密码保护的安全访问
 
-版本: v2.6.8
+版本: v2.7.0
 作者: Sakura520222
 """
 import json
@@ -22,6 +22,265 @@ from flask_cors import CORS
 import redis
 import os
 import signal
+from typing import Dict, List, Optional, Any
+
+class TrendDataStorage:
+    """
+    趋势数据本地存储管理类
+    
+    负责管理使用趋势历史数据的持久化存储，包括：
+    - 每日使用统计数据的存储和读取
+    - 历史趋势数据的管理
+    - 数据的归档和清理
+    - 多线程安全的读写操作
+    
+    属性：
+        storage_dir (str): 存储目录路径
+        max_days (int): 最大保留天数
+        _lock (threading.Lock): 线程锁，确保数据一致性
+    """
+    
+    def __init__(self, storage_dir: str = "data/trend_data", max_days: int = 365):
+        """
+        初始化趋势数据存储管理器
+        
+        参数：
+            storage_dir: 存储目录路径
+            max_days: 最大保留天数，超过此期限的数据将被自动清理
+        """
+        self.storage_dir = storage_dir
+        self.max_days = max_days
+        self._lock = threading.Lock()
+        
+        # 确保存储目录存在
+        self._ensure_storage_dir()
+    
+    def _ensure_storage_dir(self):
+        """确保存储目录存在"""
+        try:
+            os.makedirs(self.storage_dir, exist_ok=True)
+        except Exception as e:
+            print(f"创建趋势数据存储目录失败: {e}")
+    
+    def _get_date_key(self, date_obj: datetime.datetime) -> str:
+        """获取日期键"""
+        return date_obj.strftime("%Y-%m-%d")
+    
+    def _get_file_path(self, date_key: str) -> str:
+        """获取数据文件路径"""
+        return os.path.join(self.storage_dir, f"{date_key}.json")
+    
+    def save_daily_stats(self, date_obj: datetime.datetime, stats_data: Dict[str, Any]) -> bool:
+        """
+        保存每日统计数据
+        
+        参数：
+            date_obj: 日期对象
+            stats_data: 统计数据字典
+            
+        返回：
+            bool: 保存成功返回True，失败返回False
+        """
+        if not stats_data or not isinstance(stats_data, dict):
+            return False
+        
+        date_key = self._get_date_key(date_obj)
+        file_path = self._get_file_path(date_key)
+        
+        with self._lock:
+            try:
+                # 读取现有数据
+                existing_data = self._load_json_file(file_path)
+                
+                # 合并数据
+                if existing_data:
+                    existing_data.update(stats_data)
+                    stats_data = existing_data
+                
+                # 添加元数据
+                stats_data['date'] = date_key
+                stats_data['saved_at'] = datetime.datetime.now().isoformat()
+                
+                # 保存数据
+                return self._save_json_file(file_path, stats_data)
+                
+            except Exception as e:
+                print(f"保存每日统计数据失败 ({date_key}): {e}")
+                return False
+    
+    def load_daily_stats(self, date_obj: datetime.datetime) -> Optional[Dict[str, Any]]:
+        """
+        加载每日统计数据
+        
+        参数：
+            date_obj: 日期对象
+            
+        返回：
+            Dict[str, Any]: 统计数据字典，如果文件不存在返回None
+        """
+        date_key = self._get_date_key(date_obj)
+        file_path = self._get_file_path(date_key)
+        
+        with self._lock:
+            return self._load_json_file(file_path)
+    
+    def load_history_stats(self, days: int = 30) -> List[Dict[str, Any]]:
+        """
+        加载历史统计数据
+        
+        参数：
+            days: 要加载的天数
+            
+        返回：
+            List[Dict[str, Any]]: 历史统计数据列表，按日期排序
+        """
+        history_data = []
+        today = datetime.datetime.now()
+        
+        with self._lock:
+            for i in range(days):
+                date = today - datetime.timedelta(days=i)
+                date_key = self._get_date_key(date)
+                file_path = self._get_file_path(date_key)
+                
+                data = self._load_json_file(file_path)
+                if data:
+                    history_data.append(data)
+        
+        # 按日期排序（从早到晚）
+        history_data.sort(key=lambda x: x.get('date', ''))
+        return history_data
+    
+    def get_trend_data(self, period: str = 'week') -> List[Dict[str, Any]]:
+        """
+        获取趋势数据
+        
+        参数：
+            period: 时间周期 ('day', 'week', 'month')
+            
+        返回：
+            List[Dict[str, Any]]: 趋势数据列表
+        """
+        # 根据周期确定天数
+        period_days_map = {
+            'day': 7,
+            'week': 28,
+            'month': 90
+        }
+        days = period_days_map.get(period, 28)
+        
+        # 加载历史数据
+        history_data = self.load_history_stats(days)
+        
+        # 如果有历史数据，返回历史数据
+        if history_data:
+            return history_data
+        
+        # 如果没有历史数据，返回空列表（前端会处理）
+        return []
+    
+    def cleanup_old_data(self, max_days: Optional[int] = None) -> int:
+        """
+        清理过旧数据
+        
+        参数：
+            max_days: 最大保留天数，如果为None则使用初始化时的值
+            
+        返回：
+            int: 清理的文件数量
+        """
+        if max_days is None:
+            max_days = self.max_days
+        
+        cleaned_count = 0
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(days=max_days)
+        
+        with self._lock:
+            try:
+                # 获取存储目录中的所有文件
+                if not os.path.exists(self.storage_dir):
+                    return 0
+                
+                for filename in os.listdir(self.storage_dir):
+                    if filename.endswith('.json'):
+                        file_path = os.path.join(self.storage_dir, filename)
+                        
+                        # 尝试从文件名提取日期 - 支持带后缀的文件名
+                        date_str = filename[:-5]  # 移除.json扩展名
+                        # 处理带后缀的文件名（如：2025-11-22_trend_data_recent -> 2025-11-22）
+                        if '_' in date_str:
+                            date_str = date_str.split('_')[0]  # 取第一部分作为日期
+                            
+                        try:
+                            file_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                            
+                            # 如果文件日期早于截止日期，删除文件
+                            if file_date < cutoff_date:
+                                os.remove(file_path)
+                                cleaned_count += 1
+                                
+                        except ValueError:
+                            # 文件名格式不正确，跳过
+                            continue
+                            
+            except Exception as e:
+                print(f"清理过旧趋势数据失败: {e}")
+        
+        return cleaned_count
+    
+    def _load_json_file(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        安全地加载JSON文件
+        
+        参数：
+            file_path: 文件路径
+            
+        返回：
+            Dict[str, Any]: 文件内容，如果加载失败返回None
+        """
+        if not os.path.exists(file_path):
+            return None
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"加载JSON文件失败 ({file_path}): {e}")
+            return None
+    
+    def _save_json_file(self, file_path: str, data: Dict[str, Any]) -> bool:
+        """
+        安全地保存JSON文件
+        
+        参数：
+            file_path: 文件路径
+            data: 要保存的数据
+            
+        返回：
+            bool: 保存成功返回True，失败返回False
+        """
+        try:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # 原子性写入：先写入临时文件，再重命名
+            temp_file = f"{file_path}.tmp"
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            os.rename(temp_file, file_path)
+            return True
+            
+        except Exception as e:
+            print(f"保存JSON文件失败 ({file_path}): {e}")
+            # 清理可能存在的临时文件
+            temp_file = f"{file_path}.tmp"
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass
+            return False
 
 class WebServer:
     """
@@ -50,6 +309,17 @@ class WebServer:
         self.original_port = port  # 保存原始端口配置
         self.port = port
         self.domain = domain
+        
+        # 初始化趋势数据本地存储管理器
+        self.trend_storage = TrendDataStorage(
+            storage_dir="data/trend_data",
+            max_days=365  # 保存一年的数据
+        )
+        
+        # 初始化数据清理相关变量
+        self._cleanup_thread = None
+        self._cleanup_running = False
+        
         self.app = Flask(__name__)
         
         # 设置会话密钥
@@ -352,7 +622,8 @@ class WebServer:
         if not self.plugin.redis:
             return {}
         
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        # 使用与主插件相同的日期计算逻辑
+        today = self.plugin._get_reset_period_date()
         
         stats = self._initialize_stats_dict(today)
         
@@ -404,6 +675,7 @@ class WebServer:
         return {
             'default_daily_limit': config['limits']['default_daily_limit'],
             'exempt_users': config['limits']['exempt_users'],
+            'priority_users': config['limits'].get('priority_users', []),  # 添加优先级用户字段
             'group_limits': config['limits']['group_limits'],
             'user_limits': config['limits']['user_limits'],
             'group_mode_settings': config['limits']['group_mode_settings'],
@@ -412,6 +684,147 @@ class WebServer:
             'custom_messages': config['limits'].get('custom_messages', {}),
             'redis_config': config['redis']
         }
+    
+    def _update_config(self, config_data):
+        """
+        更新配置数据
+        
+        参数：
+            config_data (dict): 新的配置数据
+            
+        返回：
+            dict: 更新后的配置数据
+        """
+        try:
+            # 验证配置数据
+            if not isinstance(config_data, dict):
+                raise ValueError("配置数据格式错误")
+            
+            # 更新默认每日限制
+            if 'default_daily_limit' in config_data:
+                new_limit = config_data['default_daily_limit']
+                if isinstance(new_limit, int) and new_limit > 0:
+                    self.plugin.config['limits']['default_daily_limit'] = new_limit
+                else:
+                    raise ValueError("默认每日限制必须是大于0的整数")
+            
+            # 更新豁免用户列表
+            if 'exempt_users' in config_data:
+                exempt_users = config_data['exempt_users']
+                if isinstance(exempt_users, list):
+                    # 验证每个用户ID都是字符串
+                    valid_users = []
+                    for user_id in exempt_users:
+                        if isinstance(user_id, str) and user_id.strip():
+                            valid_users.append(user_id.strip())
+                    self.plugin.config['limits']['exempt_users'] = valid_users
+                else:
+                    raise ValueError("豁免用户列表必须是字符串列表")
+            
+            # 更新优先级用户列表
+            if 'priority_users' in config_data:
+                priority_users = config_data['priority_users']
+                if isinstance(priority_users, list):
+                    # 验证每个用户ID都是字符串
+                    valid_users = []
+                    for user_id in priority_users:
+                        if isinstance(user_id, str) and user_id.strip():
+                            valid_users.append(user_id.strip())
+                    self.plugin.config['limits']['priority_users'] = valid_users
+                else:
+                    raise ValueError("优先级用户列表必须是字符串列表")
+            
+            # 更新群组限制
+            if 'group_limits' in config_data:
+                group_limits = config_data['group_limits']
+                if isinstance(group_limits, str):
+                    self.plugin.config['limits']['group_limits'] = group_limits
+                else:
+                    raise ValueError("群组限制必须是字符串格式")
+            
+            # 更新用户限制
+            if 'user_limits' in config_data:
+                user_limits = config_data['user_limits']
+                if isinstance(user_limits, str):
+                    self.plugin.config['limits']['user_limits'] = user_limits
+                else:
+                    raise ValueError("用户限制必须是字符串格式")
+            
+            # 更新群组模式设置
+            if 'group_mode_settings' in config_data:
+                group_mode_settings = config_data['group_mode_settings']
+                if isinstance(group_mode_settings, str):
+                    self.plugin.config['limits']['group_mode_settings'] = group_mode_settings
+                else:
+                    raise ValueError("群组模式设置必须是字符串格式")
+            
+            # 更新时间段限制
+            if 'time_period_limits' in config_data:
+                time_period_limits = config_data['time_period_limits']
+                if isinstance(time_period_limits, str):
+                    self.plugin.config['limits']['time_period_limits'] = time_period_limits
+                else:
+                    raise ValueError("时间段限制必须是字符串格式")
+            
+            # 更新忽略模式
+            if 'skip_patterns' in config_data:
+                skip_patterns = config_data['skip_patterns']
+                if isinstance(skip_patterns, str):
+                    self.plugin.config['limits']['skip_patterns'] = skip_patterns
+                else:
+                    raise ValueError("忽略模式必须是字符串格式")
+            
+            # 更新自定义消息
+            if 'custom_messages' in config_data:
+                custom_messages = config_data['custom_messages']
+                if isinstance(custom_messages, dict):
+                    # 合并自定义消息，保留原有配置
+                    current_messages = self.plugin.config['limits'].get('custom_messages', {})
+                    current_messages.update(custom_messages)
+                    self.plugin.config['limits']['custom_messages'] = current_messages
+                else:
+                    raise ValueError("自定义消息必须是字典格式")
+            
+            # 更新Redis配置
+            if 'redis_config' in config_data:
+                redis_config = config_data['redis_config']
+                if isinstance(redis_config, dict):
+                    # 验证Redis配置字段
+                    required_fields = ['host', 'port', 'db', 'password']
+                    for field in required_fields:
+                        if field not in redis_config:
+                            raise ValueError(f"Redis配置缺少必要字段: {field}")
+                    
+                    # 更新Redis配置
+                    self.plugin.config['redis'] = redis_config
+                    
+                    # 重新初始化Redis连接
+                    self.plugin._init_redis()
+                else:
+                    raise ValueError("Redis配置必须是字典格式")
+            
+            # 保存配置到文件
+            self.plugin.config.save_config()
+            
+            # 重新加载插件配置
+            self.plugin._load_limits_from_config()
+            
+            # 记录配置更新日志
+            if self.plugin:
+                self.plugin._log_info("通过Web界面更新配置成功")
+            
+            # 返回更新后的配置数据
+            return self._get_config_data()
+            
+        except Exception as e:
+            # 记录错误日志
+            if self.plugin:
+                self.plugin._log_error("更新配置失败: {}", str(e))
+            else:
+                print(f"更新配置失败: {e}")
+            
+            # 重新抛出异常，让调用者处理
+            raise
     
     def _get_users_data(self):
         """
@@ -536,7 +949,7 @@ class WebServer:
         return period_days_map.get(period, 28)  # 默认最近4周
 
     def _generate_trends_data_points(self, days):
-        """生成趋势数据点
+        """生成趋势数据点（整合历史数据存储）
         
         参数：
             days (int): 分析天数
@@ -551,14 +964,41 @@ class WebServer:
             date = today - datetime.timedelta(days=i)
             date_str = date.strftime("%Y-%m-%d")
             
-            # 获取该日期的统计数据
-            stats = self._get_daily_stats(date_str)
-            trends_data.append({
-                'date': date_str,
-                'total_requests': stats['total_requests'],
-                'active_users': stats['active_users'],
-                'active_groups': stats['active_groups']
-            })
+            # 尝试从本地存储获取历史数据
+            historical_data = self.trend_storage.load_daily_stats(date)
+            
+            if historical_data:
+                # 使用本地存储的历史数据
+                trends_data.append({
+                    'date': date_str,
+                    'total_requests': historical_data.get('total_requests', 0),
+                    'active_users': historical_data.get('active_users', 0),
+                    'active_groups': historical_data.get('active_groups', 0),
+                    'source': 'historical'  # 标记数据来源
+                })
+            else:
+                # 如果没有历史数据，从Redis获取当前数据
+                if self.plugin and self.plugin.redis:
+                    stats = self._get_daily_stats_from_redis(date_str)
+                    trends_data.append({
+                        'date': date_str,
+                        'total_requests': stats['total_requests'],
+                        'active_users': stats['active_users'],
+                        'active_groups': stats['active_groups'],
+                        'source': 'redis'  # 标记数据来源
+                    })
+                    
+                    # 保存到本地存储以供将来使用
+                    self.trend_storage.save_daily_stats(date, stats)
+                else:
+                    # 如果没有Redis连接，使用默认数据
+                    trends_data.append({
+                        'date': date_str,
+                        'total_requests': 0,
+                        'active_users': 0,
+                        'active_groups': 0,
+                        'source': 'default'
+                    })
         
         # 按日期排序（从早到晚）
         trends_data.sort(key=lambda x: x['date'])
@@ -566,7 +1006,7 @@ class WebServer:
 
     def _get_trends_data(self, period='week'):
         """
-        获取趋势分析数据
+        获取趋势分析数据（使用历史数据存储）
         
         参数：
             period (str): 分析周期，支持 'day', 'week', 'month'
@@ -574,20 +1014,45 @@ class WebServer:
         返回：
             dict: 趋势分析数据，包含日期、总请求数、活跃用户数、活跃群组数等
         """
-        if not self.plugin or not self.plugin.redis:
-            return {}
-        
         try:
             # 根据周期确定分析天数
             days = self._get_period_days(period)
             
-            # 生成趋势数据点
-            trends_data = self._generate_trends_data_points(days)
+            # 优先从本地存储获取历史趋势数据
+            historical_trends = self.trend_storage.get_trend_data(period)
+            
+            if historical_trends and len(historical_trends) > 0:
+                # 如果有历史数据，直接使用
+                # 转换数据格式以保持兼容性
+                trends_data = []
+                for data in historical_trends:
+                    trends_data.append({
+                        'date': data.get('date', ''),
+                        'total_requests': data.get('total_requests', 0),
+                        'active_users': data.get('active_users', 0),
+                        'active_groups': data.get('active_groups', 0),
+                        'source': 'historical'
+                    })
+                
+                # 如果历史数据不够，需要补充新数据
+                if len(trends_data) < days:
+                    missing_days = days - len(trends_data)
+                    additional_data = self._generate_trends_data_points(missing_days)
+                    
+                    # 合并数据
+                    trends_data.extend(additional_data)
+                    
+                    # 按日期排序
+                    trends_data.sort(key=lambda x: x['date'])
+            else:
+                # 如果没有历史数据，生成新的趋势数据
+                trends_data = self._generate_trends_data_points(days)
             
             return {
                 'period': period,
                 'days': days,
-                'data': trends_data
+                'data': trends_data,
+                'has_historical_data': len(historical_trends) > 0
             }
             
         except Exception as e:
@@ -597,8 +1062,8 @@ class WebServer:
                 print(f"获取趋势分析数据失败: {e}")
             return {}
 
-    def _get_daily_stats(self, date_str):
-        """获取指定日期的统计数据"""
+    def _get_daily_stats_from_redis(self, date_str):
+        """从Redis获取指定日期的统计数据"""
         stats = self._initialize_stats_dict(date_str)
         
         # 获取活跃用户数
@@ -634,7 +1099,8 @@ class WebServer:
             return []
         
         try:
-            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            # 使用与主插件相同的日期计算逻辑
+            today = self.plugin._get_reset_period_date()
             group_keys = self._get_group_keys_for_date(today)
             
             groups_data = self._process_group_keys(group_keys)
@@ -766,6 +1232,9 @@ class WebServer:
             # 检查并调整端口
             self._adjust_port_if_needed()
             
+            # 启动数据清理线程
+            self._start_cleanup_thread()
+            
             # 启动服务器线程
             self._start_server_thread()
             
@@ -775,6 +1244,47 @@ class WebServer:
         except Exception as e:
             self._handle_start_async_error(e)
             return False
+
+    def _start_cleanup_thread(self):
+        """启动数据清理线程"""
+        try:
+            self._cleanup_running = True
+            self._cleanup_thread = threading.Thread(target=self._cleanup_worker, daemon=True)
+            self._cleanup_thread.start()
+            self._log("数据清理线程已启动")
+        except Exception as e:
+            self._log(f"启动数据清理线程失败: {e}")
+
+    def _cleanup_worker(self):
+        """数据清理工作线程"""
+        self._log("数据清理工作线程已启动")
+        
+        # 启动时立即执行一次数据清理
+        self._perform_cleanup()
+        
+        # 每小时执行一次数据清理
+        cleanup_interval = 3600  # 1小时
+        
+        while self._cleanup_running:
+            try:
+                time.sleep(cleanup_interval)
+                if self._cleanup_running:
+                    self._perform_cleanup()
+            except Exception as e:
+                self._log(f"数据清理过程中出现错误: {e}")
+        
+        self._log("数据清理工作线程已停止")
+
+    def _perform_cleanup(self):
+        """执行数据清理任务"""
+        try:
+            cleaned_count = self.trend_storage.cleanup_old_data()
+            if cleaned_count > 0:
+                self._log(f"数据清理完成，清理了 {cleaned_count} 个过期文件")
+            else:
+                self._log("数据清理完成，无需清理的数据")
+        except Exception as e:
+            self._log(f"执行数据清理任务失败: {e}")
 
     def _adjust_port_if_needed(self):
         """检查并调整端口"""
@@ -885,48 +1395,110 @@ class WebServer:
             previous_status = self.get_status()
             self._log(f"停止前服务器状态: {previous_status}")
             
+            # 设置停止标志
             self._server_running = False
             
-            # 优雅停止服务器实例
-            if self._server_instance:
-                self._log("正在关闭服务器实例...")
-                try:
-                    self._server_instance.shutdown()
-                    self._log("服务器实例已关闭")
-                except Exception as e:
-                    self._log(f"关闭服务器实例时出现异常: {e}")
-                
-            # 等待线程结束
-            if self._server_thread and self._server_thread.is_alive():
-                self._log("正在等待服务器线程结束...")
-                self._server_thread.join(timeout=10)  # 增加超时时间到10秒
-                if self._server_thread.is_alive():
-                    self._log("警告: 服务器线程未能在超时时间内结束")
-                else:
-                    self._log("服务器线程已结束")
-                
-            # 强制释放端口
-            try:
-                self._force_release_port(self.port)
-            except Exception as e:
-                self._log(f"释放端口时出现异常: {e}")
-                
-            # 清理资源
-            self._server_instance = None
-            self._server_thread = None
-            self._start_time = None
+            # 停止数据清理线程
+            self._stop_cleanup_thread()
+            
+            # 执行停止流程
+            self._stop_server_instance()
+            self._wait_for_thread_termination()
+            self._release_port()
+            self._cleanup_resources()
             
             self._log("Web服务器已停止")
             return True
             
         except Exception as e:
-            error_msg = f"停止Web服务器失败: {str(e)}"
-            self._last_error = error_msg
-            if self.plugin:
-                self.plugin._log_error(error_msg)
-            else:
-                print(error_msg)
+            self._handle_stop_error(e)
             return False
+
+    def _stop_cleanup_thread(self):
+        """停止数据清理线程"""
+        if not self._cleanup_thread or not self._cleanup_thread.is_alive():
+            return
+        
+        self._log("正在停止数据清理线程...")
+        self._cleanup_running = False
+        
+        # 等待线程结束
+        self._cleanup_thread.join(timeout=5)
+        
+        if self._cleanup_thread.is_alive():
+            self._log("警告: 数据清理线程未能在超时时间内结束")
+        else:
+            self._log("数据清理线程已停止")
+    
+    def _stop_server_instance(self):
+        """
+        优雅停止服务器实例
+        
+        负责关闭服务器实例，处理可能的异常情况。
+        """
+        if not self._server_instance:
+            return
+            
+        self._log("正在关闭服务器实例...")
+        try:
+            self._server_instance.shutdown()
+            self._log("服务器实例已关闭")
+        except Exception as e:
+            self._log(f"关闭服务器实例时出现异常: {e}")
+    
+    def _wait_for_thread_termination(self):
+        """
+        等待服务器线程结束
+        
+        负责等待线程正常结束，处理超时情况。
+        """
+        if not self._server_thread or not self._server_thread.is_alive():
+            return
+            
+        self._log("正在等待服务器线程结束...")
+        self._server_thread.join(timeout=10)  # 超时时间10秒
+        
+        if self._server_thread.is_alive():
+            self._log("警告: 服务器线程未能在超时时间内结束")
+        else:
+            self._log("服务器线程已结束")
+    
+    def _release_port(self):
+        """
+        强制释放端口
+        
+        负责释放被占用的端口资源。
+        """
+        try:
+            self._force_release_port(self.port)
+        except Exception as e:
+            self._log(f"释放端口时出现异常: {e}")
+    
+    def _cleanup_resources(self):
+        """
+        清理资源
+        
+        负责清理所有相关资源，重置状态。
+        """
+        self._server_instance = None
+        self._server_thread = None
+        self._start_time = None
+    
+    def _handle_stop_error(self, error):
+        """
+        处理停止过程中的错误
+        
+        负责记录错误信息并通知相关组件。
+        
+        参数：
+            error (Exception): 发生的异常
+        """
+        error_msg = f"停止Web服务器失败: {str(error)}"
+        self._last_error = error_msg
+        if self.plugin:
+            self.plugin._log_error(error_msg)
+        else:
+            print(error_msg)
 
 if __name__ == "__main__":
     # 测试用

@@ -1124,10 +1124,35 @@ class DailyLimitPlugin(star.Star):
 
 
 
-    @staticmethod
-    def _get_today_key():
-        """获取今天的日期键"""
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
+    def _get_today_key(self):
+        """获取考虑自定义重置时间的日期键"""
+        # 获取配置的重置时间
+        reset_time_str = self.config["limits"].get("daily_reset_time", "00:00")
+        
+        # 解析重置时间
+        try:
+            reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                raise ValueError("重置时间格式错误")
+        except (ValueError, AttributeError):
+            # 如果配置格式错误，使用默认的00:00
+            reset_hour, reset_minute = 0, 0
+            self._log_warning("重置时间配置格式错误: {}，使用默认值00:00", reset_time_str)
+        
+        now = datetime.datetime.now()
+        
+        # 如果当前时间还没到重置时间，那么属于"昨天"的统计周期
+        # 如果当前时间已经到了或超过重置时间，那么属于"今天"的统计周期
+        current_reset_time = now.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+        
+        if now >= current_reset_time:
+            # 当前时间已到达或超过重置时间，使用今天的日期
+            today = now.strftime("%Y-%m-%d")
+        else:
+            # 当前时间还没到重置时间，使用昨天的日期
+            yesterday = now - datetime.timedelta(days=1)
+            today = yesterday.strftime("%Y-%m-%d")
+        
         return f"astrbot:daily_limit:{today}"
 
     def _get_user_key(self, user_id, group_id=None):
@@ -1141,10 +1166,40 @@ class DailyLimitPlugin(star.Star):
         """获取群组共享的Redis键"""
         return f"{self._get_today_key()}:group:{group_id}"
 
+    def _get_reset_period_date(self):
+        """获取考虑自定义重置时间的日期字符串"""
+        # 获取配置的重置时间
+        reset_time_str = self.config["limits"].get("daily_reset_time", "00:00")
+        
+        # 解析重置时间
+        try:
+            reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                raise ValueError("重置时间格式错误")
+        except (ValueError, AttributeError):
+            # 如果配置格式错误，使用默认的00:00
+            reset_hour, reset_minute = 0, 0
+            self._log_warning("重置时间配置格式错误: {}，使用默认值00:00", reset_time_str)
+        
+        now = datetime.datetime.now()
+        
+        # 如果当前时间还没到重置时间，那么属于"昨天"的统计周期
+        # 如果当前时间已经到了或超过重置时间，那么属于"今天"的统计周期
+        current_reset_time = now.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+        
+        if now >= current_reset_time:
+            # 当前时间已到达或超过重置时间，使用今天的日期
+            return now.strftime("%Y-%m-%d")
+        else:
+            # 当前时间还没到重置时间，使用昨天的日期
+            yesterday = now - datetime.timedelta(days=1)
+            return yesterday.strftime("%Y-%m-%d")
+
     def _get_usage_record_key(self, user_id, group_id=None, date_str=None):
         """获取使用记录Redis键"""
         if date_str is None:
-            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            # 使用与_today_key相同的逻辑，确保日期一致性
+            date_str = self._get_reset_period_date()
         
         if group_id is None:
             group_id = "private_chat"
@@ -1154,7 +1209,8 @@ class DailyLimitPlugin(star.Star):
     def _get_usage_stats_key(self, date_str=None):
         """获取使用统计Redis键"""
         if date_str is None:
-            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            # 使用与_today_key相同的逻辑，确保日期一致性
+            date_str = self._get_reset_period_date()
         
         return f"astrbot:usage_stats:{date_str}"
 
@@ -1190,8 +1246,8 @@ class DailyLimitPlugin(star.Star):
         try:
             current_time = datetime.datetime.now()
             
-            # 记录日趋势数据
-            daily_key = self._get_trend_stats_key("daily", current_time.strftime("%Y-%m-%d"))
+            # 记录日趋势数据，使用与主逻辑相同的日期计算
+            daily_key = self._get_trend_stats_key("daily", self._get_reset_period_date())
             self._update_trend_stats(daily_key, user_id, group_id, usage_type)
             
             # 记录周趋势数据
@@ -1314,7 +1370,8 @@ class DailyLimitPlugin(star.Star):
         if group_id is None:
             group_id = "private_chat"
         
-        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        # 使用与_today_key相同的逻辑，确保日期一致性
+        date_str = self._get_reset_period_date()
         return f"astrbot:time_period_limit:{date_str}:{time_period_id}:{group_id}:{user_id}"
 
     def _get_time_period_usage(self, user_id, group_id=None):
@@ -1351,8 +1408,10 @@ class DailyLimitPlugin(star.Star):
 
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
+        user_id_str = str(user_id)
+        
         # 检查用户是否豁免（优先级最高）
-        if str(user_id) in self.config["limits"]["exempt_users"]:
+        if user_id_str in self.config["limits"]["exempt_users"]:
             return float('inf')  # 无限制
 
         # 检查时间段限制（优先级第二）
@@ -1360,9 +1419,17 @@ class DailyLimitPlugin(star.Star):
         if time_period_limit is not None:
             return time_period_limit
 
+        # 检查用户是否为优先级用户（优先级第三）
+        if user_id_str in self.config["limits"].get("priority_users", []):
+            # 优先级用户在任何群聊中只受特定限制，不参与特定群聊限制
+            if user_id_str in self.user_limits:
+                return self.user_limits[user_id_str]
+            else:
+                return self.config["limits"]["default_daily_limit"]
+
         # 检查用户特定限制
-        if str(user_id) in self.user_limits:
-            return self.user_limits[str(user_id)]
+        if user_id_str in self.user_limits:
+            return self.user_limits[user_id_str]
 
         # 检查群组特定限制
         if group_id and str(group_id) in self.group_limits:
@@ -1501,7 +1568,7 @@ class DailyLimitPlugin(star.Star):
             "user_id": user_id,
             "group_id": group_id,
             "usage_type": usage_type,
-            "date": datetime.datetime.now().strftime("%Y-%m-%d")
+            "date": self._get_reset_period_date()
         }
 
     def _set_usage_record_expiry(self, record_key):
@@ -1529,7 +1596,7 @@ class DailyLimitPlugin(star.Star):
             return False
             
         try:
-            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            date_str = self._get_reset_period_date()
             stats_key = self._get_usage_stats_key(date_str)
             
             # 收集需要更新的统计键
@@ -1579,7 +1646,16 @@ class DailyLimitPlugin(star.Star):
         """
         trend_data = {}
         for i in range(days):
+            # 为每一天计算对应的重置周期日期
             date_obj = current_time - datetime.timedelta(days=i)
+            
+            # 使用与_get_reset_period_date相同的逻辑
+            reset_time = self._get_reset_time()
+            temp_current = datetime.datetime.combine(date_obj.date(), reset_time)
+            
+            if date_obj < temp_current:
+                date_obj = date_obj - datetime.timedelta(days=1)
+            
             date_key = date_obj.strftime("%Y-%m-%d")
             trend_key = self._get_trend_stats_key("daily", date_key)
             
@@ -3035,6 +3111,7 @@ class DailyLimitPlugin(star.Star):
 
         if user_id not in self.config["limits"]["exempt_users"]:
             self.config["limits"]["exempt_users"].append(user_id)
+            self.config.save_config()
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("security")
@@ -3305,6 +3382,70 @@ class DailyLimitPlugin(star.Star):
             event.set_result(MessageEventResult().message(f"已将用户 {user_id} 从豁免列表移除"))
         else:
             event.set_result(MessageEventResult().message(f"用户 {user_id} 不在豁免列表中"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("priority")
+    async def limit_priority(self, event: AstrMessageEvent, user_id: str = None):
+        """将用户添加到优先级列表（仅管理员）"""
+
+        if user_id is None:
+            event.set_result(MessageEventResult().message("用法: /limit priority <用户ID>"))
+            return
+
+        if user_id not in self.config["limits"].get("priority_users", []):
+            if "priority_users" not in self.config["limits"]:
+                self.config["limits"]["priority_users"] = []
+            self.config["limits"]["priority_users"].append(user_id)
+            self.config.save_config()
+
+            event.set_result(MessageEventResult().message(f"已将用户 {user_id} 添加到优先级列表"))
+        else:
+            event.set_result(MessageEventResult().message(f"用户 {user_id} 已在优先级列表中"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("unpriority")
+    async def limit_unpriority(self, event: AstrMessageEvent, user_id: str = None):
+        """将用户从优先级列表移除（仅管理员）"""
+
+        if user_id is None:
+            event.set_result(MessageEventResult().message("用法: /limit unpriority <用户ID>"))
+            return
+
+        if user_id in self.config["limits"].get("priority_users", []):
+            self.config["limits"]["priority_users"].remove(user_id)
+            self.config.save_config()
+
+            event.set_result(MessageEventResult().message(f"已将用户 {user_id} 从优先级列表移除"))
+        else:
+            event.set_result(MessageEventResult().message(f"用户 {user_id} 不在优先级列表中"))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("list_exempt")
+    async def limit_list_exempt(self, event: AstrMessageEvent):
+        """列出所有豁免用户（仅管理员）"""
+        if not self.config["limits"]["exempt_users"]:
+            event.set_result(MessageEventResult().message("当前没有设置任何豁免用户"))
+            return
+
+        exempt_users_str = "豁免用户列表：\n"
+        for user_id in self.config["limits"]["exempt_users"]:
+            exempt_users_str += f"- 用户 {user_id}\n"
+
+        event.set_result(MessageEventResult().message(exempt_users_str))
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @limit_command_group.command("list_priority")
+    async def limit_list_priority(self, event: AstrMessageEvent):
+        """列出所有优先级用户（仅管理员）"""
+        if not self.config["limits"].get("priority_users", []):
+            event.set_result(MessageEventResult().message("当前没有设置任何优先级用户"))
+            return
+
+        priority_users_str = "优先级用户列表：\n"
+        for user_id in self.config["limits"]["priority_users"]:
+            priority_users_str += f"- 用户 {user_id}\n"
+
+        event.set_result(MessageEventResult().message(priority_users_str))
 
     @filter.permission_type(PermissionType.ADMIN)
     @limit_command_group.command("list_user")
@@ -3583,7 +3724,7 @@ class DailyLimitPlugin(star.Star):
 
         try:
             if date_str is None:
-                date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                date_str = self._get_reset_period_date()
             
             stats_key = self._get_usage_stats_key(date_str)
             
