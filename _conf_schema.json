@@ -264,40 +264,5 @@
                 "hint": "同一用户重复触发限制时，在此时间内不会重复发送通知，避免骚扰"
             }
         }
-    },
-    "startup_tracking": {
-        "description": "插件启动事件跟踪配置",
-        "type": "object",
-        "items": {
-            "enabled": {
-                "description": "是否启用插件启动事件跟踪",
-                "type": "bool",
-                "default": false
-            },
-            "api_url": {
-                "description": "后端API地址",
-                "type": "string",
-                "default": "",
-                "hint": "用于接收插件启动事件的后端API地址，例如：https://example.com/api/startup"
-            },
-            "api_key": {
-                "description": "API认证密钥",
-                "type": "string",
-                "default": "",
-                "hint": "用于API认证的密钥，格式为Bearer token"
-            },
-            "retry_count": {
-                "description": "请求失败重试次数",
-                "type": "int",
-                "default": 3,
-                "hint": "API请求失败后的重试次数"
-            },
-            "retry_delay": {
-                "description": "重试延迟时间（秒）",
-                "type": "int",
-                "default": 5,
-                "hint": "API请求失败后，重试前的延迟时间"
-            }
-        }
     }
 }

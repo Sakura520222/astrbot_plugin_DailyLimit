@@ -42,7 +42,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.7.6",
+    version="v2.7.7",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -375,7 +375,7 @@ class DailyLimitPlugin(star.Star):
         limit_str = parts[1].strip()
         
         limit = self._safe_parse_int(limit_str)
-        if entity_id and limit and limit > 0:
+        if entity_id and limit is not None:
             limits_dict[entity_id] = limit
         else:
             self._log_warning("{}限制配置格式错误: {}", limit_type, line)
@@ -456,7 +456,7 @@ class DailyLimitPlugin(star.Star):
             return None
             
         limit = self._safe_parse_int(parts[1].strip())
-        if limit and limit > 0:
+        if limit is not None:
             return limit
         else:
             self._log_warning("时间段限制次数格式错误: {}", line)
@@ -2224,12 +2224,12 @@ class DailyLimitPlugin(star.Star):
             reset_hour, reset_minute = map(int, reset_time_str.split(':'))
             if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
                 raise ValueError("重置时间格式错误")
-            # 返回格式化的重置时间
-            return f"{reset_hour:02d}:{reset_minute:02d}"
+            # 返回datetime.time对象
+            return datetime.time(reset_hour, reset_minute)
         except (ValueError, AttributeError):
             # 如果配置格式错误，使用默认的00:00
             self._log_warning("重置时间配置格式错误: {}，使用默认值00:00", reset_time_str)
-            return "00:00"
+            return datetime.time(0, 0)
 
     def _get_custom_message(self, message_type, default_message, **kwargs):
         """获取自定义消息模板
@@ -2427,7 +2427,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.7.6 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.7.7 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -2491,7 +2491,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.7.6 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.7.7 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -2988,13 +2988,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.7.6 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.7.7 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.7.6 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.7.7 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -4066,7 +4066,10 @@ class DailyLimitPlugin(star.Star):
                 event.set_result(MessageEventResult().message(help_msg))
                 return
 
-            if user_id.lower() == "all":
+            # 将user_id转换为字符串，防止整数类型导致lower()方法失败
+            user_id_str = str(user_id)
+            
+            if user_id_str.lower() == "all":
                 # 重置所有使用记录
                 today_key = self._get_today_key()
                 pattern = f"{today_key}:*"
@@ -4084,9 +4087,9 @@ class DailyLimitPlugin(star.Star):
                 
                 event.set_result(MessageEventResult().message(f"✅ 已重置所有使用记录，共清理 {deleted_count} 条记录"))
                 
-            elif user_id.lower().startswith("group "):
+            elif user_id_str.lower().startswith("group "):
                 # 重置特定群组
-                group_id = user_id[6:].strip()  # 移除"group "前缀
+                group_id = user_id_str[6:].strip()  # 移除"group "前缀
                 
                 # 验证群组ID格式
                 if not group_id.isdigit():
@@ -4121,18 +4124,18 @@ class DailyLimitPlugin(star.Star):
             else:
                 # 重置特定用户
                 # 验证用户ID格式
-                if not user_id.isdigit():
+                if not user_id_str.isdigit():
                     event.set_result(MessageEventResult().message("❌ 用户ID格式错误，请输入数字ID"))
                     return
 
                 # 查找并删除该用户的所有使用记录
                 today_key = self._get_today_key()
-                pattern = f"{today_key}:*:{user_id}"
+                pattern = f"{today_key}:*:{user_id_str}"
                 
                 keys = self.redis.keys(pattern)
                 
                 if not keys:
-                    event.set_result(MessageEventResult().message(f"❌ 未找到用户 {user_id} 的使用记录"))
+                    event.set_result(MessageEventResult().message(f"❌ 未找到用户 {user_id_str} 的使用记录"))
                     return
                 
                 deleted_count = 0
@@ -4140,7 +4143,7 @@ class DailyLimitPlugin(star.Star):
                     self.redis.delete(key)
                     deleted_count += 1
                 
-                event.set_result(MessageEventResult().message(f"✅ 已重置用户 {user_id} 的使用次数，共清理 {deleted_count} 条记录"))
+                event.set_result(MessageEventResult().message(f"✅ 已重置用户 {user_id_str} 的使用次数，共清理 {deleted_count} 条记录"))
                 
         except Exception as e:
             self._log_error("重置使用次数失败: {}", str(e))
@@ -4435,7 +4438,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.7.6")
+            current_version = self.config.get("version", "v2.7.7")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -4573,7 +4576,7 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.7.6")
+            current_version = self.config.get("version", "v2.7.7")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
@@ -4604,7 +4607,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.7.6")
+            current_version = self.config.get("version", "v2.7.7")
             
             # 构建版本信息消息
             version_msg = f"📦 日调用限制插件版本信息\n"
@@ -4648,7 +4651,7 @@ class DailyLimitPlugin(star.Star):
 ░░░░░░░░░░   ░░░░░   ░░░░░ ░░░░░ ░░░░░░░░░░░    ░░░░░       ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░    ░░░░░    
                                                                                                                 
                                                                                                                                                                                                       
-                                       每日调用限制插件 v2.7.6                       
+                                       每日调用限制插件 v2.7.7                       
                                   作者: left666 & Sakura520222                  
     """
 
