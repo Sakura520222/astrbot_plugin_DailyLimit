@@ -462,6 +462,7 @@ Redis是插件的数据存储后端，必须正确配置才能正常运行。
 如遇到任何问题，请通过以下方式联系：
 - 📧 Telegram: [@TamakiSakura520](https://t.me/TamakiSakura520)
 - 💬 Issues: [GitHub Issues](https://github.com/left666/astrbot_plugin_daily_limit/issues)
+- 💬 QQ群: 922321912 (可以反馈也可以来玩耍，不点Star不给进)
 
 ## 📄 许可证
 
