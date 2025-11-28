@@ -7,6 +7,36 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
+        /* CSS变量定义 */
+        :root {
+            /* 主色调 */
+            --primary-color: #d63384;
+            --primary-gradient: linear-gradient(135deg, #ffb7c5 0%, #ff9eb5 25%, #ff85a1 50%, #ff6b8b 75%, #ff4777 100%);
+            --primary-gradient-dark: linear-gradient(135deg, #1a1a2e 0%, #16213e 25%, #0f3460 50%, #1a1a2e 75%, #16213e 100%);
+            
+            /* 文本颜色 */
+            --text-primary: #5a3d5c;
+            --text-secondary: #8b5a7c;
+            --text-light: #f0f0f0;
+            
+            /* 背景颜色 */
+            --bg-light: rgba(255, 255, 255, 0.95);
+            --bg-light-alt: rgba(255, 240, 245, 0.95);
+            --bg-dark: rgba(30, 30, 50, 0.95);
+            --bg-dark-alt: rgba(40, 40, 60, 0.95);
+            
+            /* 边框颜色 */
+            --border-light: rgba(255, 182, 193, 0.3);
+            --border-dark: rgba(60, 60, 80, 0.3);
+            
+            /* 阴影 */
+            --shadow-light: 0 4px 20px rgba(255, 105, 180, 0.15);
+            --shadow-dark: 0 4px 20px rgba(0, 0, 0, 0.3);
+            
+            /* 过渡效果 */
+            --transition: all 0.3s ease;
+        }
+        
         * {
             margin: 0;
             padding: 0;
@@ -15,11 +45,19 @@
         
         body {
             font-family: 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #ffb7c5 0%, #ff9eb5 25%, #ff85a1 50%, #ff6b8b 75%, #ff4777 100%);
+            background: var(--primary-gradient);
             min-height: 100vh;
-            color: #5a3d5c;
+            color: var(--text-primary);
             position: relative;
             overflow-x: hidden;
+            transition: var(--transition);
+        }
+        
+        /* 添加深色模式过渡效果 */
+        body, .header, .stat-card, .chart-container, .data-section, .table-container, 
+        .modal-content, .modal-header, .form-input, .form-textarea, select, 
+        .top-nav, .mobile-menu, .nav-link, .mobile-nav-link {
+            transition: var(--transition);
         }
         
         /* 樱花飘落效果 */
@@ -33,6 +71,218 @@
             opacity: 0.7;
             animation: fall linear infinite;
             z-index: 0;
+        }
+        
+        /* 添加页面加载动画样式 */
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-20px);
+            }
+            60% {
+                transform: translateY(-10px);
+            }
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* 页面加载动画 */
+        #pageLoader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--primary-gradient);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+        
+        body.dark-mode #pageLoader {
+            background: var(--primary-gradient-dark);
+        }
+        
+        #pageLoader .loader-content {
+            text-align: center;
+        }
+        
+        #pageLoader .loader-icon {
+            font-size: 4rem;
+            animation: bounce 1s ease-in-out infinite;
+        }
+        
+        #pageLoader .loader-text {
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-top: 20px;
+            animation: fadeIn 1.5s ease-in-out infinite alternate;
+        }
+        
+        body.dark-mode #pageLoader .loader-text {
+            color: #ff9eb5;
+        }
+        
+        /* 组件进入动画 */
+        .header, .stat-card, .chart-container, .data-section {
+            animation: slideUp 0.6s ease-out forwards;
+            opacity: 0;
+        }
+        
+        /* 为不同组件设置不同的动画延迟 */
+        .header {
+            animation-delay: 0.1s;
+        }
+        
+        .stat-card:nth-child(1) {
+            animation-delay: 0.2s;
+        }
+        
+        .stat-card:nth-child(2) {
+            animation-delay: 0.3s;
+        }
+        
+        .stat-card:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        .stat-card:nth-child(4) {
+            animation-delay: 0.5s;
+        }
+        
+        .chart-container:nth-child(1) {
+            animation-delay: 0.6s;
+        }
+        
+        .chart-container:nth-child(2) {
+            animation-delay: 0.7s;
+        }
+        
+        .data-section:nth-child(1) {
+            animation-delay: 0.8s;
+        }
+        
+        .data-section:nth-child(2) {
+            animation-delay: 0.9s;
+        }
+        
+        .data-section:nth-child(3) {
+            animation-delay: 1.0s;
+        }
+        
+        .data-section:nth-child(4) {
+            animation-delay: 1.1s;
+        }
+        
+        /* 深色模式样式 */
+        body.dark-mode {
+            background: var(--primary-gradient-dark);
+            color: var(--text-light);
+        }
+        
+        body.dark-mode .header {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border-color: var(--border-dark);
+        }
+        
+        body.dark-mode .stat-card {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border-color: var(--border-dark);
+        }
+        
+        body.dark-mode .chart-container {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border-color: var(--border-dark);
+        }
+        
+        body.dark-mode .data-section {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border-color: var(--border-dark);
+        }
+        
+        body.dark-mode .table-container {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border-color: var(--border-dark);
+        }
+        
+        body.dark-mode th {
+            background: linear-gradient(135deg, rgba(40, 40, 60, 0.9) 0%, rgba(50, 50, 70, 0.9) 100%);
+        }
+        
+        body.dark-mode tr:hover {
+            background: linear-gradient(135deg, rgba(40, 40, 60, 0.6) 0%, rgba(50, 50, 70, 0.6) 100%);
+        }
+        
+        body.dark-mode .modal-content {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border-color: var(--border-dark);
+        }
+        
+        body.dark-mode .modal-header {
+            background: linear-gradient(135deg, rgba(40, 40, 60, 0.9) 0%, rgba(50, 50, 70, 0.9) 100%);
+        }
+        
+        body.dark-mode .form-input,
+        body.dark-mode .form-textarea {
+            background: rgba(40, 40, 60, 0.9);
+            border-color: var(--border-dark);
+            color: var(--text-light);
+        }
+        
+        body.dark-mode select {
+            background: rgba(40, 40, 60, 0.9);
+            border-color: var(--border-dark);
+            color: var(--text-light);
+        }
+        
+        body.dark-mode input[type="time"] {
+            background: rgba(40, 40, 60, 0.9);
+            border-color: var(--border-dark);
+            color: var(--text-light);
+        }
+        
+        body.dark-mode .sakura {
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 30%, transparent 70%);
+        }
+        
+        /* 深色模式下的文本颜色 */
+        body.dark-mode .stat-label,
+        body.dark-mode .section-title,
+        body.dark-mode .status-label,
+        body.dark-mode .form-group label {
+            color: var(--text-light);
+        }
+        
+        body.dark-mode .error {
+            background: linear-gradient(135deg, rgba(80, 20, 20, 0.9) 0%, rgba(100, 30, 30, 0.9) 100%);
+            color: #ffcccc;
+        }
+        
+        body.dark-mode .loading {
+            color: var(--text-light);
         }
         
         @keyframes fall {
@@ -572,6 +822,316 @@
             th, td {
                 padding: 12px 15px;
             }
+            
+            /* 优化小屏幕上的筛选控件 */
+            .section-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .section-header > div:last-child {
+                width: 100%;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .section-header input, .section-header select {
+                flex: 1;
+                min-width: 150px;
+            }
+            
+            /* 优化表格在小屏幕上的显示 */
+            .table-container {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                border-radius: 15px;
+                box-shadow: 0 4px 20px rgba(255, 105, 180, 0.1);
+            }
+            
+            body.dark-mode .table-container {
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            }
+            
+            table {
+                min-width: 600px;
+                border-collapse: collapse;
+            }
+            
+            /* 响应式表格设计 */
+            @media (max-width: 640px) {
+                table {
+                    min-width: auto;
+                    font-size: 0.85rem;
+                }
+                
+                th, td {
+                    padding: 8px 12px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    max-width: 120px;
+                }
+                
+                th {
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                }
+                
+                /* 隐藏一些次要列 */
+                table#usersTable th:nth-child(4),
+                table#usersTable td:nth-child(4),
+                table#groupsTable th:nth-child(4),
+                table#groupsTable td:nth-child(4) {
+                    display: none;
+                }
+            }
+            
+            /* 优化按钮大小 */
+            .refresh-btn {
+                padding: 10px 18px;
+                font-size: 0.9rem;
+            }
+        }
+        
+        /* 固定顶部导航栏样式 */
+        .top-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, var(--bg-light) 0%, var(--bg-light-alt) 100%);
+            backdrop-filter: blur(20px);
+            box-shadow: var(--shadow-light);
+            z-index: 1000;
+            transition: var(--transition);
+        }
+        
+        body.dark-mode .top-nav {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            box-shadow: var(--shadow-dark);
+        }
+        
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 60px;
+        }
+        
+        .nav-logo {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--primary-color);
+            background: linear-gradient(45deg, var(--primary-color), #e83e8c, #fd7e14);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 12px;
+            border-radius: 8px;
+            transition: var(--transition);
+            font-size: 0.95rem;
+        }
+        
+        .nav-link:hover {
+            background: rgba(255, 182, 193, 0.3);
+            color: var(--primary-color);
+            transform: translateY(-1px);
+        }
+        
+        body.dark-mode .nav-link {
+            color: var(--text-light);
+        }
+        
+        body.dark-mode .nav-link:hover {
+            background: rgba(60, 60, 80, 0.5);
+            color: #ff9eb5;
+        }
+        
+        .nav-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .nav-btn {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+        }
+        
+        /* 汉堡菜单样式 */
+        .hamburger-btn {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            cursor: pointer;
+            padding: 5px;
+            transition: var(--transition);
+        }
+        
+        body.dark-mode .hamburger-btn {
+            color: var(--text-light);
+        }
+        
+        .hamburger-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        /* 移动端菜单样式 */
+        .mobile-menu {
+            display: none;
+            background: linear-gradient(135deg, var(--bg-light) 0%, var(--bg-light-alt) 100%);
+            backdrop-filter: blur(20px);
+            padding: 10px 20px;
+            box-shadow: var(--shadow-light);
+        }
+        
+        body.dark-mode .mobile-menu {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            box-shadow: var(--shadow-dark);
+        }
+        
+        .mobile-menu.active {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .mobile-nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 12px 15px;
+            border-radius: 8px;
+            transition: var(--transition);
+            font-size: 0.95rem;
+        }
+        
+        .mobile-nav-link:hover {
+            background: rgba(255, 182, 193, 0.3);
+            color: var(--primary-color);
+        }
+        
+        body.dark-mode .mobile-nav-link {
+            color: var(--text-light);
+        }
+        
+        body.dark-mode .mobile-nav-link:hover {
+            background: rgba(60, 60, 80, 0.5);
+            color: #ff9eb5;
+        }
+        
+        /* 调整容器位置，避免被导航栏遮挡 */
+        .container {
+            margin-top: 80px;
+        }
+        
+        @media (max-width: 1024px) {
+            .nav-links {
+                gap: 15px;
+            }
+            
+            .nav-link {
+                font-size: 0.9rem;
+                padding: 6px 10px;
+            }
+            
+            .nav-btn {
+                padding: 6px 12px;
+                font-size: 0.85rem;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+            
+            .nav-actions {
+                display: none;
+            }
+            
+            .hamburger-btn {
+                display: block;
+            }
+            
+            .nav-container {
+                padding: 0 15px;
+            }
+            
+            .container {
+                margin-top: 70px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.6rem;
+            }
+            
+            .header p {
+                font-size: 0.9rem;
+            }
+            
+            .section-title {
+                font-size: 1.1rem;
+            }
+            
+            .stat-number {
+                font-size: 1.8rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            /* 确保筛选控件在超小屏幕上垂直排列 */
+            .section-header > div:last-child {
+                flex-direction: column;
+            }
+            
+            .section-header input, .section-header select {
+                width: 100%;
+                min-width: auto;
+            }
+            
+            /* 优化模态框 */
+            .modal-content {
+                width: 95%;
+                margin: 10px;
+            }
+            
+            .modal-header, .modal-body, .modal-footer {
+                padding: 15px;
+            }
+            
+            .modal-footer {
+                flex-direction: column;
+            }
+            
+            .modal-footer button {
+                width: 100%;
+            }
         }
         
         /* 模态框样式 */
@@ -707,26 +1267,65 @@
     </style>
 </head>
 <body>
+    <!-- 页面加载动画 -->
+    <div id="pageLoader">
+        <div class="loader-content">
+            <div class="loader-icon">🌸</div>
+            <div class="loader-text">正在加载数据...</div>
+        </div>
+    </div>
+    
     <!-- 樱花飘落效果容器 -->
     <div id="sakuraContainer"></div>
+    
+    <!-- 固定顶部导航栏 -->
+    <nav class="top-nav">
+        <div class="nav-container">
+            <div class="nav-logo">🌸 每日限制插件</div>
+            <div class="nav-links">
+                <a href="#overview" class="nav-link">📊 统计概览</a>
+                <a href="#status" class="nav-link">📈 状态直观图</a>
+                <a href="#trends" class="nav-link">📉 趋势分析</a>
+                <a href="#users" class="nav-link">👥 用户数据</a>
+                <a href="#groups" class="nav-link">👥 群组数据</a>
+                <a href="#config" class="nav-link">⚙️ 配置信息</a>
+            </div>
+            <div class="nav-actions">
+                <button class="nav-btn refresh-btn" onclick="loadData()">🌸 刷新数据</button>
+                <button class="nav-btn refresh-btn" onclick="toggleDarkMode()" style="background: linear-gradient(135deg, #6c757d, #adb5bd);">
+                    <span id="darkModeIcon">🌙 深色模式</span>
+                </button>
+                <button class="nav-btn refresh-btn" onclick="logout()" style="background: linear-gradient(135deg, #ffb74d, #ff9800);">🌸 退出登录</button>
+            </div>
+            <!-- 汉堡菜单按钮 -->
+            <button class="hamburger-btn" onclick="toggleMobileMenu()">
+                <span class="hamburger-icon">☰</span>
+            </button>
+        </div>
+        <!-- 移动端菜单 -->
+        <div class="mobile-menu" id="mobileMenu">
+            <a href="#overview" class="mobile-nav-link" onclick="toggleMobileMenu()">📊 统计概览</a>
+            <a href="#status" class="mobile-nav-link" onclick="toggleMobileMenu()">📈 状态直观图</a>
+            <a href="#trends" class="mobile-nav-link" onclick="toggleMobileMenu()">📉 趋势分析</a>
+            <a href="#users" class="mobile-nav-link" onclick="toggleMobileMenu()">👥 用户数据</a>
+            <a href="#groups" class="mobile-nav-link" onclick="toggleMobileMenu()">👥 群组数据</a>
+            <a href="#config" class="mobile-nav-link" onclick="toggleMobileMenu()">⚙️ 配置信息</a>
+        </div>
+    </nav>
     
     <div class="container">
         <div class="header">
             <h1>🌸 每日限制插件 - 管理界面</h1>
-            <p>🌸 实时监控用户使用情况和配置管理 🌸</p>
-            <div style="display: flex; gap: 10px; margin-top: 10px;">
-                <button class="refresh-btn" onclick="loadData()">🌸 刷新数据</button>
-                <button class="refresh-btn" onclick="logout()" style="background: linear-gradient(135deg, #ffb74d, #ff9800);">🌸 退出登录</button>
-            </div>
+            <p>🌸 实时监控用户使用情况 🌸</p>
         </div>
         
         <!-- 统计概览 -->
-        <div class="stats-grid" id="statsGrid">
+        <div id="overview" class="stats-grid" id="statsGrid">
             <div class="loading">正在加载数据...</div>
         </div>
         
         <!-- 状态直观图 -->
-        <div class="dashboard">
+        <div id="status" class="dashboard">
             <div class="chart-container">
                 <div class="section-header">
                     <div class="section-title">使用情况统计图</div>
@@ -745,7 +1344,7 @@
         </div>
         
         <!-- 趋势分析图表 -->
-        <div class="data-section">
+        <div id="trends" class="data-section">
             <div class="section-header">
                 <div class="section-title">📈 使用趋势分析</div>
                 <div style="display: flex; gap: 10px; align-items: center;">
@@ -763,24 +1362,45 @@
         </div>
         
         <!-- 用户数据 -->
-        <div class="data-section">
+        <div id="users" class="data-section">
             <div class="section-header">
                 <div class="section-title">👥 用户使用情况</div>
-                <div class="section-info" id="userInfo"></div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div class="section-info" id="userInfo"></div>
+                    <div style="position: relative;">
+                        <input type="text" id="userFilter" placeholder="🔍 搜索用户ID" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <span id="userSearchCount" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; color: #8b5a7c;"></span>
+                    </div>
+                    <select id="userStatusFilter" onchange="filterUsers()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="all">全部状态</option>
+                        <option value="normal">🟢 正常</option>
+                        <option value="warning">🟡 警告</option>
+                        <option value="danger">🔴 危险</option>
+                    </select>
+                    <select id="userUsageFilter" onchange="filterUsers()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="all">全部使用率</option>
+                        <option value="0-30">0-30%</option>
+                        <option value="30-70">30-70%</option>
+                        <option value="70-90">70-90%</option>
+                        <option value="90-100">90-100%</option>
+                    </select>
+                    <button class="refresh-btn" onclick="exportToCSV('users')" style="background: linear-gradient(135deg, #28a745, #20c997);">📥 导出CSV</button>
+                    <button class="refresh-btn" onclick="resetUserFilters()" style="background: linear-gradient(135deg, #6c757d, #adb5bd);">🔄 重置筛选</button>
+                </div>
             </div>
             <div class="table-container">
                 <table id="usersTable">
                     <thead>
                         <tr>
-                            <th>用户ID</th>
-                            <th>已使用次数</th>
-                            <th>限制次数</th>
-                            <th>剩余次数</th>
-                            <th>使用率</th>
-                            <th>状态</th>
+                            <th onclick="sortTable('usersTable', 0)" style="cursor: pointer; position: relative;">用户ID <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('usersTable', 1)" style="cursor: pointer; position: relative;">已使用次数 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('usersTable', 2)" style="cursor: pointer; position: relative;">限制次数 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('usersTable', 3)" style="cursor: pointer; position: relative;">剩余次数 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('usersTable', 4)" style="cursor: pointer; position: relative;">使用率 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('usersTable', 5)" style="cursor: pointer; position: relative;">状态 <span class="sort-indicator">↕️</span></th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="usersTableBody">
                         <tr>
                             <td colspan="6" class="loading">正在加载用户数据...</td>
                         </tr>
@@ -790,25 +1410,51 @@
         </div>
         
         <!-- 群组数据 -->
-        <div class="data-section">
+        <div id="groups" class="data-section">
             <div class="section-header">
                 <div class="section-title">👥 群组使用情况</div>
-                <div class="section-info" id="groupInfo"></div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div class="section-info" id="groupInfo"></div>
+                    <div style="position: relative;">
+                        <input type="text" id="groupFilter" placeholder="🔍 搜索群组ID" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <span id="groupSearchCount" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; color: #8b5a7c;"></span>
+                    </div>
+                    <select id="groupStatusFilter" onchange="filterGroups()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="all">全部状态</option>
+                        <option value="normal">🟢 正常</option>
+                        <option value="warning">🟡 警告</option>
+                        <option value="danger">🔴 危险</option>
+                    </select>
+                    <select id="groupModeFilter" onchange="filterGroups()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="all">全部模式</option>
+                        <option value="shared">共享</option>
+                        <option value="independent">独立</option>
+                    </select>
+                    <select id="groupUsageFilter" onchange="filterGroups()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="all">全部使用率</option>
+                        <option value="0-30">0-30%</option>
+                        <option value="30-70">30-70%</option>
+                        <option value="70-90">70-90%</option>
+                        <option value="90-100">90-100%</option>
+                    </select>
+                    <button class="refresh-btn" onclick="exportToCSV('groups')" style="background: linear-gradient(135deg, #28a745, #20c997);">📥 导出CSV</button>
+                    <button class="refresh-btn" onclick="resetGroupFilters()" style="background: linear-gradient(135deg, #6c757d, #adb5bd);">🔄 重置筛选</button>
+                </div>
             </div>
             <div class="table-container">
                 <table id="groupsTable">
                     <thead>
                         <tr>
-                            <th>群组ID</th>
-                            <th>已使用次数</th>
-                            <th>限制次数</th>
-                            <th>剩余次数</th>
-                            <th>模式</th>
-                            <th>使用率</th>
-                            <th>状态</th>
+                            <th onclick="sortTable('groupsTable', 0)" style="cursor: pointer; position: relative;">群组ID <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('groupsTable', 1)" style="cursor: pointer; position: relative;">已使用次数 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('groupsTable', 2)" style="cursor: pointer; position: relative;">限制次数 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('groupsTable', 3)" style="cursor: pointer; position: relative;">剩余次数 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('groupsTable', 4)" style="cursor: pointer; position: relative;">模式 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('groupsTable', 5)" style="cursor: pointer; position: relative;">使用率 <span class="sort-indicator">↕️</span></th>
+                            <th onclick="sortTable('groupsTable', 6)" style="cursor: pointer; position: relative;">状态 <span class="sort-indicator">↕️</span></th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="groupsTableBody">
                         <tr>
                             <td colspan="7" class="loading">正在加载群组数据...</td>
                         </tr>
@@ -818,68 +1464,69 @@
         </div>
         
         <!-- 配置信息 -->
-        <div class="data-section">
+        <div id="config" class="data-section">
             <div class="section-header">
                 <div class="section-title">⚙️ 配置信息</div>
-                <button class="refresh-btn" onclick="openConfigEditor()" style="background: linear-gradient(135deg, #ff9eb5, #ff6b8b);">🌸 编辑配置</button>
             </div>
             <div id="configContent" class="loading">正在加载配置...</div>
         </div>
 
-        <!-- 配置编辑模态框 -->
-        <div id="configModal" class="modal" style="display: none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>🌸 编辑配置</h3>
-                    <span class="close" onclick="closeConfigEditor()">&times;</span>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="defaultDailyLimit">默认每日限制:</label>
-                        <input type="number" id="defaultDailyLimit" min="1" max="1000" class="form-input">
-                    </div>
+
+
                     
-                    <div class="form-group">
-                        <label for="exemptUsers">豁免用户 (每行一个用户ID):</label>
-                        <textarea id="exemptUsers" class="form-textarea" placeholder="请输入用户ID，每行一个"></textarea>
-                    </div>
+
                     
-                    <div class="form-group">
-                        <label for="priorityUsers">优先级用户 (每行一个用户ID):</label>
-                        <textarea id="priorityUsers" class="form-textarea" placeholder="请输入用户ID，每行一个"></textarea>
-                        <small style="color: #8b5a7c; font-size: 0.8rem;">优先级用户将获得更高的使用限制</small>
-                    </div>
+
                     
-                    <div class="form-group">
-                        <label for="groupLimits">群组限制 (格式: 群组ID=限制次数):</label>
-                        <textarea id="groupLimits" class="form-textarea" placeholder="例如: 123456=50\n789012=30"></textarea>
-                    </div>
+
                     
-                    <div class="form-group">
-                        <label for="userLimits">用户限制 (格式: 用户ID=限制次数):</label>
-                        <textarea id="userLimits" class="form-textarea" placeholder="例如: 123456=50\n789012=30"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="refresh-btn" onclick="saveConfig()" style="background: linear-gradient(135deg, #28a745, #20c997);">🌸 保存配置</button>
-                    <button class="refresh-btn" onclick="closeConfigEditor()" style="background: linear-gradient(135deg, #6c757d, #adb5bd);">🌸 取消</button>
-                </div>
-            </div>
-        </div>
-    </div>
+
+                    
+
+                    
+
+
+
+
+
 
     <script>
         let usageChart = null;
         let trendChart = null;
+        let originalUsers = [];
+        let originalGroups = [];
         
         // 页面加载时获取数据
         document.addEventListener('DOMContentLoaded', function() {
-            loadData();
-            loadTrends();
+            // 显示加载动画
+            const loader = document.getElementById('pageLoader');
+            loader.style.display = 'flex';
+            
+            // 加载数据
+            Promise.all([loadData(), loadTrends()]).then(() => {
+                // 数据加载完成后隐藏加载动画
+                setTimeout(() => {
+                    loader.style.opacity = '0';
+                    loader.style.visibility = 'hidden';
+                }, 500);
+            });
+            
             // 每30秒自动刷新数据
             setInterval(loadData, 30000);
+            
             // 创建樱花效果
             setInterval(createSakura, 500);
+            
+            // 添加搜索框事件监听
+            document.getElementById('userFilter').addEventListener('input', filterUsers);
+            document.getElementById('groupFilter').addEventListener('input', filterGroups);
+            
+            // 初始化搜索计数
+            document.getElementById('userSearchCount').textContent = '';
+            document.getElementById('groupSearchCount').textContent = '';
+            
+            // 初始化深色模式
+            initDarkMode();
         });
         
         // 登出函数
@@ -890,7 +1537,40 @@
         }
         
         async function loadData() {
+            // 显示全局加载状态
+            const refreshBtn = document.querySelector('.refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '🌸 加载中...';
+                refreshBtn.disabled = true;
+            }
+            
             try {
+                // 显示各区域加载状态
+                const statsGrid = document.getElementById('statsGrid');
+                if (statsGrid) {
+                    statsGrid.innerHTML = '<div class="loading">正在加载统计数据...</div>';
+                }
+                
+                const usersTableBody = document.getElementById('usersTableBody');
+                if (usersTableBody) {
+                    usersTableBody.innerHTML = '<tr><td colspan="6" class="loading">正在加载用户数据...</td></tr>';
+                }
+                
+                const groupsTableBody = document.getElementById('groupsTableBody');
+                if (groupsTableBody) {
+                    groupsTableBody.innerHTML = '<tr><td colspan="7" class="loading">正在加载群组数据...</td></tr>';
+                }
+                
+                const configContent = document.getElementById('configContent');
+                if (configContent) {
+                    configContent.innerHTML = '<div class="loading">正在加载配置...</div>';
+                }
+                
+                const statusSummary = document.getElementById('statusSummary');
+                if (statusSummary) {
+                    statusSummary.innerHTML = '<div class="loading">正在加载状态数据...</div>';
+                }
+                
                 await Promise.all([
                     loadStats(),
                     loadUsers(),
@@ -901,6 +1581,12 @@
             } catch (error) {
                 console.error('加载数据失败:', error);
                 showError('数据加载失败: ' + error.message);
+            } finally {
+                // 隐藏全局加载状态
+                if (refreshBtn) {
+                    refreshBtn.innerHTML = '🌸 刷新数据';
+                    refreshBtn.disabled = false;
+                }
             }
         }
         
@@ -928,24 +1614,26 @@
                 const stats = response.data.data;
                 
                 const statsGrid = document.getElementById('statsGrid');
-                statsGrid.innerHTML = `
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.total_requests || 0}</div>
-                        <div class="stat-label">今日总调用次数</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.active_users || 0}</div>
-                        <div class="stat-label">活跃用户数</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.active_groups || 0}</div>
-                        <div class="stat-label">活跃群组数</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">${stats.date || '--'}</div>
-                        <div class="stat-label">统计日期</div>
-                    </div>
-                `;
+                if (statsGrid) {
+                    statsGrid.innerHTML = `
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.total_requests || 0}</div>
+                            <div class="stat-label">今日总调用次数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.active_users || 0}</div>
+                            <div class="stat-label">活跃用户数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.active_groups || 0}</div>
+                            <div class="stat-label">活跃群组数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.date || '--'}</div>
+                            <div class="stat-label">统计日期</div>
+                        </div>
+                    `;
+                }
             } else {
                 throw new Error(response.data.error);
             }
@@ -956,7 +1644,8 @@
             
             if (response.data.success) {
                 const users = response.data.data;
-                const tbody = document.querySelector('#usersTable tbody');
+                originalUsers = users;
+                const tbody = document.getElementById('usersTableBody');
                 const userInfo = document.getElementById('userInfo');
                 
                 // 更新用户信息摘要
@@ -970,34 +1659,12 @@
                     return usageRate > 90;
                 }).length;
                 
-                userInfo.innerHTML = `<span style="color: #8b5a7c; font-size: 0.9rem;">总计: ${totalUsers} | 警告: ${warningUsers} | 危险: ${dangerUsers}</span>`;
-                
-                if (users.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="loading">暂无用户数据</td></tr>';
-                    return;
+                if (userInfo) {
+                    userInfo.innerHTML = `<span style="color: #8b5a7c; font-size: 0.9rem;">总计: ${totalUsers} | 警告: ${warningUsers} | 危险: ${dangerUsers}</span>`;
                 }
                 
-                tbody.innerHTML = users.map(user => {
-                    const usageRate = (user.usage_count / user.limit) * 100;
-                    const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
-                    const status = usageRate > 90 ? '🔴 危险' : usageRate > 70 ? '🟡 警告' : '🟢 正常';
-                    
-                    return `
-                        <tr>
-                            <td>${user.user_id}</td>
-                            <td>${user.usage_count}</td>
-                            <td>${user.limit === Infinity ? '无限制' : user.limit}</td>
-                            <td>${user.limit === Infinity ? '无限制' : user.remaining}</td>
-                            <td>
-                                <div class="progress-bar">
-                                    <div class="progress ${progressClass}" style="width: ${Math.min(usageRate, 100)}%"></div>
-                                </div>
-                                ${Math.round(usageRate)}%
-                            </td>
-                            <td>${status}</td>
-                        </tr>
-                    `;
-                }).join('');
+                // 应用筛选和排序
+                filterUsers();
             } else {
                 throw new Error(response.data.error);
             }
@@ -1008,7 +1675,7 @@
             
             if (response.data.success) {
                 const groups = response.data.data;
-                const tbody = document.querySelector('#groupsTable tbody');
+                originalGroups = groups;
                 const groupInfo = document.getElementById('groupInfo');
                 
                 // 更新群组信息摘要
@@ -1022,35 +1689,12 @@
                     return usageRate > 90;
                 }).length;
                 
-                groupInfo.innerHTML = `<span style="color: #8b5a7c; font-size: 0.9rem;">总计: ${totalGroups} | 警告: ${warningGroups} | 危险: ${dangerGroups}</span>`;
-                
-                if (groups.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="loading">暂无群组数据</td></tr>';
-                    return;
+                if (groupInfo) {
+                    groupInfo.innerHTML = `<span style="color: #8b5a7c; font-size: 0.9rem;">总计: ${totalGroups} | 警告: ${warningGroups} | 危险: ${dangerGroups}</span>`;
                 }
                 
-                tbody.innerHTML = groups.map(group => {
-                    const usageRate = (group.usage_count / group.limit) * 100;
-                    const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
-                    const status = usageRate > 90 ? '🔴 危险' : usageRate > 70 ? '🟡 警告' : '🟢 正常';
-                    
-                    return `
-                        <tr>
-                            <td>${group.group_id}</td>
-                            <td>${group.usage_count}</td>
-                            <td>${group.limit === Infinity ? '无限制' : group.limit}</td>
-                            <td>${group.limit === Infinity ? '无限制' : group.remaining}</td>
-                            <td>${group.mode === 'shared' ? '共享' : '独立'}</td>
-                            <td>
-                                <div class="progress-bar">
-                                    <div class="progress ${progressClass}" style="width: ${Math.min(usageRate, 100)}%"></div>
-                                </div>
-                                ${Math.round(usageRate)}%
-                            </td>
-                            <td>${status}</td>
-                        </tr>
-                    `;
-                }).join('');
+                // 应用筛选和排序
+                filterGroups();
             } else {
                 throw new Error(response.data.error);
             }
@@ -1068,31 +1712,33 @@
                 const userLimitsCount = config.user_limits ? config.user_limits.trim().split('\n').filter(line => line.trim()).length : 0;
                 const priorityUsersCount = config.priority_users ? config.priority_users.length : 0;
                 
-                configContent.innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
-                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
-                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 基本配置</h4>
-                            <p><strong>默认每日限制:</strong> ${config.default_daily_limit}</p>
-                            <p><strong>忽略模式:</strong> ${config.skip_patterns.join(', ') || '无'}</p>
+                if (configContent) {
+                    configContent.innerHTML = `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+                            <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
+                                <h4 style="color: #d63384; margin-bottom: 8px;">🌸 基本配置</h4>
+                                <p><strong>默认每日限制:</strong> ${config.default_daily_limit}</p>
+                                <p><strong>忽略模式:</strong> ${config.skip_patterns.join(', ') || '无'}</p>
+                            </div>
+                            <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
+                                <h4 style="color: #d63384; margin-bottom: 8px;">🌸 豁免用户</h4>
+                                <p>${config.exempt_users.length > 0 ? config.exempt_users.join(', ') : '无豁免用户'}</p>
+                            </div>
+                            <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff85a1;">
+                                <h4 style="color: #d63384; margin-bottom: 8px;">🌸 优先级用户</h4>
+                                <p>${priorityUsersCount > 0 ? config.priority_users.join(', ') : '无优先级用户'}</p>
+                            </div>
+                            <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
+                                <h4 style="color: #d63384; margin-bottom: 8px;">🌸 群组限制</h4>
+                                <p>${groupLimitsCount} 个群组有特定限制</p>
+                            </div>
+                            <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #d63384;">
+                                <h4 style="color: #d63384; margin-bottom: 8px;">🌸 用户限制</h4>
+                                <p>${userLimitsCount} 个用户有特定限制</p>
+                            </div>
                         </div>
-                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
-                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 豁免用户</h4>
-                            <p>${config.exempt_users.length > 0 ? config.exempt_users.join(', ') : '无豁免用户'}</p>
-                        </div>
-                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff85a1;">
-                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 优先级用户</h4>
-                            <p>${priorityUsersCount > 0 ? config.priority_users.join(', ') : '无优先级用户'}</p>
-                        </div>
-                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
-                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 群组限制</h4>
-                            <p>${groupLimitsCount} 个群组有特定限制</p>
-                        </div>
-                        <div style="background: rgba(255, 240, 245, 0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #d63384;">
-                            <h4 style="color: #d63384; margin-bottom: 8px;">🌸 用户限制</h4>
-                            <p>${userLimitsCount} 个用户有特定限制</p>
-                        </div>
-                    </div>
-                `;
+                    `;
+                }
             } else {
                 throw new Error(response.data.error);
             }
@@ -1141,40 +1787,42 @@
                     
                     // 更新状态概览
                     const statusSummary = document.getElementById('statusSummary');
-                    statusSummary.innerHTML = `
-                        <div class="status-item">
-                            <div class="status-value" style="color: #28a745;">${normalUsers}</div>
-                            <div class="status-label">正常用户</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value" style="color: #ffc107;">${warningUsers}</div>
-                            <div class="status-label">警告用户</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value" style="color: #dc3545;">${dangerUsers}</div>
-                            <div class="status-label">危险用户</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value" style="color: #28a745;">${normalGroups}</div>
-                            <div class="status-label">正常群组</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value" style="color: #ffc107;">${warningGroups}</div>
-                            <div class="status-label">警告群组</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value" style="color: #dc3545;">${dangerGroups}</div>
-                            <div class="status-label">危险群组</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value">${totalUsers}</div>
-                            <div class="status-label">总用户数</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="status-value">${totalGroups}</div>
-                            <div class="status-label">总群组数</div>
-                        </div>
-                    `;
+                    if (statusSummary) {
+                        statusSummary.innerHTML = `
+                            <div class="status-item">
+                                <div class="status-value" style="color: #28a745;">${normalUsers}</div>
+                                <div class="status-label">正常用户</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value" style="color: #ffc107;">${warningUsers}</div>
+                                <div class="status-label">警告用户</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value" style="color: #dc3545;">${dangerUsers}</div>
+                                <div class="status-label">危险用户</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value" style="color: #28a745;">${normalGroups}</div>
+                                <div class="status-label">正常群组</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value" style="color: #ffc107;">${warningGroups}</div>
+                                <div class="status-label">警告群组</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value" style="color: #dc3545;">${dangerGroups}</div>
+                                <div class="status-label">危险群组</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value">${totalUsers}</div>
+                                <div class="status-label">总用户数</div>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-value">${totalGroups}</div>
+                                <div class="status-label">总群组数</div>
+                            </div>
+                        `;
+                    }
                     
                     // 更新图表
                     updateUsageChart(users, groups);
@@ -1185,7 +1833,11 @@
         }
         
         function updateUsageChart(users, groups) {
-            const ctx = document.getElementById('usageChart').getContext('2d');
+            const usageChartElement = document.getElementById('usageChart');
+            if (!usageChartElement) return;
+            
+            const ctx = usageChartElement.getContext('2d');
+            if (!ctx) return;
             
             // 销毁现有图表
             if (usageChart) {
@@ -1250,7 +1902,11 @@
         }
         
         function updateTrendChart(trendsData) {
-            const ctx = document.getElementById('trendChart').getContext('2d');
+            const trendChartElement = document.getElementById('trendChart');
+            if (!trendChartElement) return;
+            
+            const ctx = trendChartElement.getContext('2d');
+            if (!ctx) return;
             
             // 销毁现有图表
             if (trendChart) {
@@ -1414,16 +2070,53 @@
             
             // 添加到页面顶部
             const container = document.querySelector('.container');
-            container.insertBefore(errorDiv, container.firstChild);
-            
-            // 3秒后自动移除
-            setTimeout(() => {
-                errorDiv.remove();
-            }, 3000);
+            if (container) {
+                container.insertBefore(errorDiv, container.firstChild);
+                
+                // 3秒后自动移除
+                setTimeout(() => {
+                    errorDiv.remove();
+                }, 3000);
+            } else {
+                // 如果container不存在，直接在body末尾添加
+                document.body.appendChild(errorDiv);
+                
+                // 3秒后自动移除
+                setTimeout(() => {
+                    errorDiv.remove();
+                }, 3000);
+            }
         }
         
-        // 樱花飘落效果
+        // 平滑滚动功能
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                if (targetElement) {
+                    const offsetTop = targetElement.offsetTop - 80; // 考虑导航栏高度
+                    window.scrollTo({
+                        top: offsetTop,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+        
+        // 汉堡菜单切换功能
+        function toggleMobileMenu() {
+            const mobileMenu = document.getElementById('mobileMenu');
+            mobileMenu.classList.toggle('active');
+        }
+        
+        // 樱花飘落效果优化
+        let sakuraCount = 0;
+        const maxSakura = 20; // 限制樱花数量，减少性能消耗
+        
         function createSakura() {
+            if (sakuraCount >= maxSakura) return;
+            
             const sakuraContainer = document.getElementById('sakuraContainer');
             const sakura = document.createElement('div');
             sakura.className = 'sakura';
@@ -1447,10 +2140,12 @@
             
             // 添加到容器
             sakuraContainer.appendChild(sakura);
+            sakuraCount++;
             
             // 动画结束后移除元素
             sakura.addEventListener('animationend', function() {
                 sakura.remove();
+                sakuraCount--;
             });
         }
         
@@ -1512,10 +2207,13 @@
                     
                     // 填充表单
                     document.getElementById('defaultDailyLimit').value = currentConfig.default_daily_limit;
+                    document.getElementById('priorityMultiplier').value = currentConfig.priority_multiplier || 2;
                     document.getElementById('exemptUsers').value = currentConfig.exempt_users.join('\n');
                     document.getElementById('priorityUsers').value = currentConfig.priority_users ? currentConfig.priority_users.join('\n') : '';
                     document.getElementById('groupLimits').value = currentConfig.group_limits;
                     document.getElementById('userLimits').value = currentConfig.user_limits;
+                    document.getElementById('skipPatterns').value = currentConfig.skip_patterns.join('\n');
+                    document.getElementById('resetTime').value = currentConfig.reset_time || '00:00';
                 } else {
                     throw new Error(response.data.error);
                 }
@@ -1530,6 +2228,7 @@
                 // 收集表单数据
                 const configData = {
                     default_daily_limit: parseInt(document.getElementById('defaultDailyLimit').value),
+                    priority_multiplier: parseFloat(document.getElementById('priorityMultiplier').value),
                     exempt_users: document.getElementById('exemptUsers').value.split('\n')
                         .map(line => line.trim())
                         .filter(line => line.length > 0),
@@ -1537,12 +2236,20 @@
                         .map(line => line.trim())
                         .filter(line => line.length > 0),
                     group_limits: document.getElementById('groupLimits').value,
-                    user_limits: document.getElementById('userLimits').value
+                    user_limits: document.getElementById('userLimits').value,
+                    skip_patterns: document.getElementById('skipPatterns').value.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0),
+                    reset_time: document.getElementById('resetTime').value
                 };
                 
                 // 验证数据
                 if (configData.default_daily_limit < 1 || configData.default_daily_limit > 1000) {
                     throw new Error('默认每日限制必须在1-1000之间');
+                }
+                
+                if (configData.priority_multiplier < 1 || configData.priority_multiplier > 10) {
+                    throw new Error('优先级用户倍率必须在1-10之间');
                 }
                 
                 // 验证豁免用户和优先级用户格式
@@ -1594,6 +2301,343 @@
             setTimeout(() => {
                 successDiv.remove();
             }, 3000);
+        }
+        
+        // 渲染用户表格
+        function renderUsersTable(users) {
+            const tbody = document.getElementById('usersTableBody');
+            
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="loading">暂无匹配的用户数据</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = users.map(user => {
+                const usageRate = (user.usage_count / user.limit) * 100;
+                const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
+                const status = usageRate > 90 ? '🔴 危险' : usageRate > 70 ? '🟡 警告' : '🟢 正常';
+                
+                return `
+                    <tr>
+                        <td>${user.user_id}</td>
+                        <td>${user.usage_count}</td>
+                        <td>${user.limit === Infinity ? '无限制' : user.limit}</td>
+                        <td>${user.limit === Infinity ? '无限制' : user.remaining}</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress ${progressClass}" style="width: ${Math.min(usageRate, 100)}%"></div>
+                            </div>
+                            ${Math.round(usageRate)}%
+                        </td>
+                        <td>${status}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // 渲染群组表格
+        function renderGroupsTable(groups) {
+            const tbody = document.getElementById('groupsTableBody');
+            
+            if (groups.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="loading">暂无匹配的群组数据</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = groups.map(group => {
+                const usageRate = (group.usage_count / group.limit) * 100;
+                const progressClass = usageRate > 90 ? 'danger' : usageRate > 70 ? 'warning' : '';
+                const status = usageRate > 90 ? '🔴 危险' : usageRate > 70 ? '🟡 警告' : '🟢 正常';
+                
+                return `
+                    <tr>
+                        <td>${group.group_id}</td>
+                        <td>${group.usage_count}</td>
+                        <td>${group.limit === Infinity ? '无限制' : group.limit}</td>
+                        <td>${group.limit === Infinity ? '无限制' : group.remaining}</td>
+                        <td>${group.mode === 'shared' ? '共享' : '独立'}</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress ${progressClass}" style="width: ${Math.min(usageRate, 100)}%"></div>
+                            </div>
+                            ${Math.round(usageRate)}%
+                        </td>
+                        <td>${status}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // 筛选用户
+        function filterUsers() {
+            const filterValue = document.getElementById('userFilter').value.toLowerCase();
+            const statusFilter = document.getElementById('userStatusFilter').value;
+            const usageFilter = document.getElementById('userUsageFilter').value;
+            
+            let filteredUsers = [...originalUsers];
+            
+            // 应用搜索筛选
+            if (filterValue) {
+                filteredUsers = filteredUsers.filter(user => 
+                    user.user_id.toLowerCase().includes(filterValue)
+                );
+            }
+            
+            // 应用状态筛选
+            if (statusFilter !== 'all') {
+                filteredUsers = filteredUsers.filter(user => {
+                    const usageRate = (user.usage_count / user.limit) * 100;
+                    if (statusFilter === 'normal') return usageRate <= 70;
+                    if (statusFilter === 'warning') return usageRate > 70 && usageRate <= 90;
+                    if (statusFilter === 'danger') return usageRate > 90;
+                    return true;
+                });
+            }
+            
+            // 应用使用率筛选
+            if (usageFilter !== 'all') {
+                const [minRate, maxRate] = usageFilter.split('-').map(Number);
+                filteredUsers = filteredUsers.filter(user => {
+                    const usageRate = (user.usage_count / user.limit) * 100;
+                    return usageRate >= minRate && usageRate <= maxRate;
+                });
+            }
+            
+            // 更新搜索计数
+            document.getElementById('userSearchCount').textContent = `(${filteredUsers.length})`;
+            
+            renderUsersTable(filteredUsers);
+        }
+        
+        // 重置用户筛选
+        function resetUserFilters() {
+            document.getElementById('userFilter').value = '';
+            document.getElementById('userStatusFilter').value = 'all';
+            document.getElementById('userUsageFilter').value = 'all';
+            document.getElementById('userSearchCount').textContent = '';
+            filterUsers();
+        }
+        
+        // 筛选群组
+        function filterGroups() {
+            const filterValue = document.getElementById('groupFilter').value.toLowerCase();
+            const statusFilter = document.getElementById('groupStatusFilter').value;
+            const modeFilter = document.getElementById('groupModeFilter').value;
+            const usageFilter = document.getElementById('groupUsageFilter').value;
+            
+            let filteredGroups = [...originalGroups];
+            
+            // 应用搜索筛选
+            if (filterValue) {
+                filteredGroups = filteredGroups.filter(group => 
+                    group.group_id.toLowerCase().includes(filterValue)
+                );
+            }
+            
+            // 应用状态筛选
+            if (statusFilter !== 'all') {
+                filteredGroups = filteredGroups.filter(group => {
+                    const usageRate = (group.usage_count / group.limit) * 100;
+                    if (statusFilter === 'normal') return usageRate <= 70;
+                    if (statusFilter === 'warning') return usageRate > 70 && usageRate <= 90;
+                    if (statusFilter === 'danger') return usageRate > 90;
+                    return true;
+                });
+            }
+            
+            // 应用模式筛选
+            if (modeFilter !== 'all') {
+                filteredGroups = filteredGroups.filter(group => 
+                    group.mode === modeFilter
+                );
+            }
+            
+            // 应用使用率筛选
+            if (usageFilter !== 'all') {
+                const [minRate, maxRate] = usageFilter.split('-').map(Number);
+                filteredGroups = filteredGroups.filter(group => {
+                    const usageRate = (group.usage_count / group.limit) * 100;
+                    return usageRate >= minRate && usageRate <= maxRate;
+                });
+            }
+            
+            // 更新搜索计数
+            document.getElementById('groupSearchCount').textContent = `(${filteredGroups.length})`;
+            
+            renderGroupsTable(filteredGroups);
+        }
+        
+        // 重置群组筛选
+        function resetGroupFilters() {
+            document.getElementById('groupFilter').value = '';
+            document.getElementById('groupStatusFilter').value = 'all';
+            document.getElementById('groupModeFilter').value = 'all';
+            document.getElementById('groupUsageFilter').value = 'all';
+            document.getElementById('groupSearchCount').textContent = '';
+            filterGroups();
+        }
+        
+        // 表格排序
+        function sortTable(tableId, columnIndex) {
+            const table = document.getElementById(tableId);
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const isAscending = table.dataset.sortColumn === columnIndex.toString() && table.dataset.sortDirection === 'asc';
+            const direction = isAscending ? 'desc' : 'asc';
+            
+            // 更新排序状态
+            table.dataset.sortColumn = columnIndex;
+            table.dataset.sortDirection = direction;
+            
+            // 更新排序指示器
+            const indicators = table.querySelectorAll('.sort-indicator');
+            indicators.forEach((indicator, index) => {
+                if (index === columnIndex) {
+                    indicator.textContent = direction === 'asc' ? '↑' : '↓';
+                } else {
+                    indicator.textContent = '↕️';
+                }
+            });
+            
+            // 排序行
+            rows.sort((a, b) => {
+                const aValue = a.cells[columnIndex].textContent.trim();
+                const bValue = b.cells[columnIndex].textContent.trim();
+                
+                // 尝试转换为数字进行比较
+                const aNum = parseFloat(aValue);
+                const bNum = parseFloat(bValue);
+                
+                if (!isNaN(aNum) && !isNaN(bNum)) {
+                    return direction === 'asc' ? aNum - bNum : bNum - aNum;
+                }
+                
+                // 字符串比较
+                return direction === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+            });
+            
+            // 重新添加行
+            rows.forEach(row => tbody.appendChild(row));
+        }
+        
+        // 导出CSV功能
+        function exportToCSV(type) {
+            let data, headers, filename;
+            
+            if (type === 'users') {
+                // 获取当前筛选后的用户数据
+                const tbody = document.getElementById('usersTableBody');
+                const rows = tbody.querySelectorAll('tr');
+                headers = ['用户ID', '已使用次数', '限制次数', '剩余次数', '使用率', '状态'];
+                filename = `用户使用情况_${new Date().toISOString().slice(0, 10)}.csv`;
+                
+                data = Array.from(rows).filter(row => row.cells.length > 1).map(row => {
+                    return Array.from(row.cells).map(cell => {
+                        // 提取文本内容，去除HTML标签
+                        const text = cell.textContent.trim();
+                        // 处理包含逗号或引号的内容
+                        return `"${text.replace(/"/g, '""')}"`;
+                    });
+                });
+            } else if (type === 'groups') {
+                // 获取当前筛选后的群组数据
+                const tbody = document.getElementById('groupsTableBody');
+                const rows = tbody.querySelectorAll('tr');
+                headers = ['群组ID', '已使用次数', '限制次数', '剩余次数', '模式', '使用率', '状态'];
+                filename = `群组使用情况_${new Date().toISOString().slice(0, 10)}.csv`;
+                
+                data = Array.from(rows).filter(row => row.cells.length > 1).map(row => {
+                    return Array.from(row.cells).map(cell => {
+                        // 提取文本内容，去除HTML标签
+                        const text = cell.textContent.trim();
+                        // 处理包含逗号或引号的内容
+                        return `"${text.replace(/"/g, '""')}"`;
+                    });
+                });
+            } else {
+                showError('不支持的导出类型');
+                return;
+            }
+            
+            // 添加表头
+            data.unshift(headers.map(header => `"${header}"`));
+            
+            // 转换为CSV格式
+            const csvContent = data.map(row => row.join(',')).join('\n');
+            
+            // 创建下载链接
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            if (link.download !== undefined) {
+                // 浏览器支持HTML5下载属性
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                showError('您的浏览器不支持CSV导出功能');
+            }
+        }
+        
+        // 深色模式相关函数
+        function initDarkMode() {
+            // 检查本地存储中的深色模式设置
+            const isDarkMode = localStorage.getItem('darkMode') === 'true';
+            
+            // 应用深色模式
+            if (isDarkMode) {
+                document.body.classList.add('dark-mode');
+                document.getElementById('darkModeIcon').textContent = '☀️ 浅色模式';
+            } else {
+                document.body.classList.remove('dark-mode');
+                document.getElementById('darkModeIcon').textContent = '🌙 深色模式';
+            }
+        }
+        
+        function toggleDarkMode() {
+            // 获取按钮元素
+            const darkModeBtn = event.target.closest('button');
+            const darkModeIcon = document.getElementById('darkModeIcon');
+            
+            // 切换深色模式
+            const isDarkMode = document.body.classList.toggle('dark-mode');
+            
+            // 保存设置到本地存储
+            localStorage.setItem('darkMode', isDarkMode);
+            
+            // 更新按钮文本
+            darkModeIcon.textContent = isDarkMode ? '☀️ 浅色模式' : '🌙 深色模式';
+            
+            // 更新图表主题
+            updateChartsTheme(isDarkMode);
+        }
+        
+        // 更新图表主题
+        function updateChartsTheme(isDarkMode) {
+            // 更新图表颜色配置
+            const textColor = isDarkMode ? '#f0f0f0' : '#5a3d5c';
+            const gridColor = isDarkMode ? 'rgba(60, 60, 80, 0.3)' : 'rgba(255, 182, 193, 0.2)';
+            
+            // 重新渲染图表
+            if (usageChart) {
+                usageChart.options.plugins.legend.labels.color = textColor;
+                usageChart.options.plugins.title.color = textColor;
+                usageChart.update();
+            }
+            
+            if (trendChart) {
+                trendChart.options.plugins.legend.labels.color = textColor;
+                trendChart.options.plugins.title.color = textColor;
+                trendChart.options.scales.x.ticks.color = textColor;
+                trendChart.options.scales.y.ticks.color = textColor;
+                trendChart.options.scales.x.grid.color = gridColor;
+                trendChart.options.scales.y.grid.color = gridColor;
+                trendChart.update();
+            }
         }
         
 
