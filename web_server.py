@@ -638,7 +638,37 @@ class WebServer:
         # 计算总请求数
         stats['total_requests'] = self._calculate_total_requests(user_keys)
         
+        # 保存每日统计数据到本地存储
+        self._save_daily_stats(stats)
+        
         return stats
+    
+    def _save_daily_stats(self, stats):
+        """
+        保存每日统计数据到本地存储
+        
+        参数：
+            stats (dict): 统计数据字典
+        """
+        if not stats or not isinstance(stats, dict):
+            return False
+        
+        try:
+            # 获取日期对象
+            date_str = stats.get('date')
+            if not date_str:
+                return False
+            
+            date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+            
+            # 保存到本地存储
+            return self.trend_storage.save_daily_stats(date_obj, stats)
+        except Exception as e:
+            if self.plugin:
+                self.plugin._log_error("保存每日统计数据失败: {}", str(e))
+            else:
+                print(f"保存每日统计数据失败: {e}")
+            return False
 
     def _initialize_stats_dict(self, date_str):
         """初始化统计字典"""
@@ -949,7 +979,8 @@ class WebServer:
         return period_days_map.get(period, 28)  # 默认最近4周
 
     def _generate_trends_data_points(self, days):
-        """生成趋势数据点（整合历史数据存储）
+        """
+        生成趋势数据点（整合历史数据存储）
         
         参数：
             days (int): 分析天数
@@ -961,8 +992,12 @@ class WebServer:
         today = datetime.datetime.now()
         
         for i in range(days):
+            # 计算日期
             date = today - datetime.timedelta(days=i)
-            date_str = date.strftime("%Y-%m-%d")
+            
+            # 使用主插件的日期计算逻辑，确保与主插件一致
+            # 先获取日期字符串，考虑自定义重置时间
+            date_str = self._get_reset_period_date_for_date(date)
             
             # 尝试从本地存储获取历史数据
             historical_data = self.trend_storage.load_daily_stats(date)
@@ -1003,6 +1038,39 @@ class WebServer:
         # 按日期排序（从早到晚）
         trends_data.sort(key=lambda x: x['date'])
         return trends_data
+    
+    def _get_reset_period_date_for_date(self, date_obj):
+        """
+        获取指定日期对象对应的重置周期日期
+        
+        参数：
+            date_obj: 日期对象
+            
+        返回：
+            str: 重置周期日期字符串
+        """
+        # 获取配置的重置时间
+        reset_time_str = self.plugin.config["limits"].get("daily_reset_time", "00:00")
+        
+        # 解析重置时间
+        try:
+            reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                raise ValueError("重置时间格式错误")
+        except (ValueError, AttributeError):
+            # 如果配置格式错误，使用默认的00:00
+            reset_hour, reset_minute = 0, 0
+        
+        # 构建当前日期的重置时间
+        current_reset_time = date_obj.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+        
+        # 如果当前时间已到达或超过重置时间，使用今天的日期
+        # 否则使用昨天的日期
+        if date_obj >= current_reset_time:
+            return date_obj.strftime("%Y-%m-%d")
+        else:
+            yesterday = date_obj - datetime.timedelta(days=1)
+            return yesterday.strftime("%Y-%m-%d")
 
     def _get_trends_data(self, period='week'):
         """
@@ -1048,11 +1116,15 @@ class WebServer:
                 # 如果没有历史数据，生成新的趋势数据
                 trends_data = self._generate_trends_data_points(days)
             
+            # 计算统计指标
+            stats_summary = self._calculate_trends_summary(trends_data)
+            
             return {
                 'period': period,
                 'days': days,
                 'data': trends_data,
-                'has_historical_data': len(historical_trends) > 0
+                'has_historical_data': len(historical_trends) > 0,
+                'summary': stats_summary
             }
             
         except Exception as e:
@@ -1061,6 +1133,64 @@ class WebServer:
             else:
                 print(f"获取趋势分析数据失败: {e}")
             return {}
+    
+    def _calculate_trends_summary(self, trends_data):
+        """
+        计算趋势数据的统计摘要
+        
+        参数：
+            trends_data (list): 趋势数据列表
+            
+        返回：
+            dict: 统计摘要数据
+        """
+        if not trends_data:
+            return {}
+        
+        # 提取数据
+        total_requests = [item['total_requests'] for item in trends_data if 'total_requests' in item]
+        active_users = [item['active_users'] for item in trends_data if 'active_users' in item]
+        active_groups = [item['active_groups'] for item in trends_data if 'active_groups' in item]
+        
+        # 计算基本统计指标
+        def calculate_stats(data_list):
+            if not data_list:
+                return {
+                    'average': 0,
+                    'peak': 0,
+                    'min': 0,
+                    'total': 0,
+                    'growth_rate': 0
+                }
+            
+            average = sum(data_list) / len(data_list)
+            peak = max(data_list)
+            min_val = min(data_list)
+            total = sum(data_list)
+            
+            # 计算增长率（如果有足够数据）
+            growth_rate = 0
+            if len(data_list) >= 2:
+                first_val = data_list[0]
+                last_val = data_list[-1]
+                if first_val > 0:
+                    growth_rate = ((last_val - first_val) / first_val) * 100
+            
+            return {
+                'average': round(average, 2),
+                'peak': peak,
+                'min': min_val,
+                'total': total,
+                'growth_rate': round(growth_rate, 2)
+            }
+        
+        # 计算各指标的统计数据
+        return {
+            'total_requests': calculate_stats(total_requests),
+            'active_users': calculate_stats(active_users),
+            'active_groups': calculate_stats(active_groups),
+            'days_count': len(trends_data)
+        }
 
     def _get_daily_stats_from_redis(self, date_str):
         """从Redis获取指定日期的统计数据"""
@@ -1256,13 +1386,16 @@ class WebServer:
             self._log(f"启动数据清理线程失败: {e}")
 
     def _cleanup_worker(self):
-        """数据清理工作线程"""
+        """
+        数据清理工作线程
+        """
         self._log("数据清理工作线程已启动")
         
-        # 启动时立即执行一次数据清理
+        # 启动时立即执行一次数据清理和统计保存
         self._perform_cleanup()
+        self._save_current_stats()
         
-        # 每小时执行一次数据清理
+        # 每小时执行一次数据清理和统计保存
         cleanup_interval = 3600  # 1小时
         
         while self._cleanup_running:
@@ -1270,10 +1403,31 @@ class WebServer:
                 time.sleep(cleanup_interval)
                 if self._cleanup_running:
                     self._perform_cleanup()
+                    self._save_current_stats()
             except Exception as e:
                 self._log(f"数据清理过程中出现错误: {e}")
         
         self._log("数据清理工作线程已停止")
+    
+    def _save_current_stats(self):
+        """
+        保存当前统计数据到本地存储
+        """
+        try:
+            # 获取当前统计数据
+            stats = self._get_usage_stats()
+            if stats and stats.get('date'):
+                # 获取日期对象
+                date_str = stats.get('date')
+                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                
+                # 保存到本地存储
+                if self.trend_storage.save_daily_stats(date_obj, stats):
+                    self._log(f"已保存当前统计数据到本地存储: {date_str}")
+                else:
+                    self._log(f"保存当前统计数据失败: {date_str}")
+        except Exception as e:
+            self._log(f"保存当前统计数据过程中出现错误: {e}")
 
     def _perform_cleanup(self):
         """执行数据清理任务"""

@@ -1283,7 +1283,7 @@
         <div class="nav-container">
             <div class="nav-logo">🌸 每日限制插件</div>
             <div class="nav-links">
-                <a href="#overview" class="nav-link">📊 统计概览</a>
+                <a href="#statsGrid" class="nav-link">📊 统计概览</a>
                 <a href="#status" class="nav-link">📈 状态直观图</a>
                 <a href="#trends" class="nav-link">📉 趋势分析</a>
                 <a href="#users" class="nav-link">👥 用户数据</a>
@@ -1304,7 +1304,7 @@
         </div>
         <!-- 移动端菜单 -->
         <div class="mobile-menu" id="mobileMenu">
-            <a href="#overview" class="mobile-nav-link" onclick="toggleMobileMenu()">📊 统计概览</a>
+            <a href="#statsGrid" class="mobile-nav-link" onclick="toggleMobileMenu()">📊 统计概览</a>
             <a href="#status" class="mobile-nav-link" onclick="toggleMobileMenu()">📈 状态直观图</a>
             <a href="#trends" class="mobile-nav-link" onclick="toggleMobileMenu()">📉 趋势分析</a>
             <a href="#users" class="mobile-nav-link" onclick="toggleMobileMenu()">👥 用户数据</a>
@@ -1320,7 +1320,7 @@
         </div>
         
         <!-- 统计概览 -->
-        <div id="overview" class="stats-grid" id="statsGrid">
+        <div id="statsGrid" class="stats-grid">
             <div class="loading">正在加载数据...</div>
         </div>
         
@@ -1347,17 +1347,52 @@
         <div id="trends" class="data-section">
             <div class="section-header">
                 <div class="section-title">📈 使用趋势分析</div>
-                <div style="display: flex; gap: 10px; align-items: center;">
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <select id="trendPeriod" onchange="loadTrends()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
                         <option value="day">最近7天</option>
                         <option value="week" selected>最近4周</option>
                         <option value="month">最近3个月</option>
                     </select>
+                    
+                    <!-- 数据系列切换控制 -->
+                    <div style="display: flex; gap: 15px; align-items: center; background: rgba(255, 240, 245, 0.5); padding: 8px 12px; border-radius: 8px;">
+                        <label style="font-size: 0.9rem; color: #8b5a7c; font-weight: 600;">显示数据:</label>
+                        <label style="display: flex; align-items: center; gap: 5px; font-size: 0.9rem; color: #8b5a7c;">
+                            <input type="checkbox" id="showTotalRequests" checked onchange="toggleDataset('total_requests')" style="cursor: pointer;">
+                            <span>总请求数</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; font-size: 0.9rem; color: #8b5a7c;">
+                            <input type="checkbox" id="showActiveUsers" checked onchange="toggleDataset('active_users')" style="cursor: pointer;">
+                            <span>活跃用户</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; font-size: 0.9rem; color: #8b5a7c;">
+                            <input type="checkbox" id="showActiveGroups" checked onchange="toggleDataset('active_groups')" style="cursor: pointer;">
+                            <span>活跃群组</span>
+                        </label>
+                    </div>
+                    
+                    <!-- 图表类型切换 -->
+                    <select id="chartType" onchange="changeChartType()" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 182, 193, 0.5); background: rgba(255, 255, 255, 0.9); color: #8b5a7c; font-size: 0.9rem;">
+                        <option value="line" selected>折线图</option>
+                        <option value="bar">柱状图</option>
+                    </select>
+                    
                     <button class="refresh-btn" onclick="loadTrends()" style="padding: 8px 12px; font-size: 0.9rem;">刷新趋势</button>
                 </div>
             </div>
+            
+            <!-- 统计摘要卡片 -->
+            <div id="trendSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <!-- 统计卡片将通过JavaScript动态生成 -->
+            </div>
+            
             <div class="chart-container" style="height: 400px;">
                 <canvas id="trendChart"></canvas>
+            </div>
+            
+            <!-- 数据导出按钮 -->
+            <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+                <button class="refresh-btn" onclick="exportTrendData()" style="background: linear-gradient(135deg, #28a745, #20c997); padding: 8px 16px; font-size: 0.9rem;">📥 导出数据</button>
             </div>
         </div>
         
@@ -1935,54 +1970,91 @@
                     periodText = '趋势分析';
             }
             
+            // 检查是否为深色模式
+            const isDarkMode = document.body.classList.contains('dark-mode');
+            
+            // 设置主题颜色
+            const themeColors = {
+                text: isDarkMode ? '#f0f0f0' : '#5a3d5c',
+                textSecondary: isDarkMode ? '#adb5bd' : '#8b5a7c',
+                grid: isDarkMode ? 'rgba(60, 60, 80, 0.3)' : 'rgba(255, 182, 193, 0.2)',
+                tooltipBg: isDarkMode ? 'rgba(40, 40, 60, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                tooltipBorder: isDarkMode ? 'rgba(60, 60, 80, 0.5)' : 'rgba(255, 182, 193, 0.5)'
+            };
+            
+            // 获取图表类型
+            const chartType = document.getElementById('chartType').value;
+            
+            // 创建数据集
+            const datasets = [
+                {
+                    label: '总请求数',
+                    data: totalRequests,
+                    borderColor: 'rgba(214, 51, 132, 1)',
+                    backgroundColor: 'rgba(214, 51, 132, 0.1)',
+                    borderWidth: 3,
+                    fill: chartType === 'line',
+                    tension: chartType === 'line' ? 0.4 : 0,
+                    pointBackgroundColor: 'rgba(214, 51, 132, 1)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: chartType === 'line' ? 4 : 0,
+                    pointHoverRadius: chartType === 'line' ? 6 : 0,
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(214, 51, 132, 1)',
+                    pointHoverBorderWidth: 3
+                },
+                {
+                    label: '活跃用户数',
+                    data: activeUsers,
+                    borderColor: 'rgba(255, 107, 139, 1)',
+                    backgroundColor: 'rgba(255, 107, 139, 0.1)',
+                    borderWidth: 3,
+                    fill: chartType === 'line',
+                    tension: chartType === 'line' ? 0.4 : 0,
+                    pointBackgroundColor: 'rgba(255, 107, 139, 1)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: chartType === 'line' ? 4 : 0,
+                    pointHoverRadius: chartType === 'line' ? 6 : 0,
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(255, 107, 139, 1)',
+                    pointHoverBorderWidth: 3
+                },
+                {
+                    label: '活跃群组数',
+                    data: activeGroups,
+                    borderColor: 'rgba(255, 158, 181, 1)',
+                    backgroundColor: 'rgba(255, 158, 181, 0.1)',
+                    borderWidth: 3,
+                    fill: chartType === 'line',
+                    tension: chartType === 'line' ? 0.4 : 0,
+                    pointBackgroundColor: 'rgba(255, 158, 181, 1)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: chartType === 'line' ? 4 : 0,
+                    pointHoverRadius: chartType === 'line' ? 6 : 0,
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(255, 158, 181, 1)',
+                    pointHoverBorderWidth: 3
+                }
+            ];
+            
+            // 根据复选框状态过滤数据集
+            const filteredDatasets = datasets.filter((dataset, index) => {
+                const checkboxes = [
+                    document.getElementById('showTotalRequests'),
+                    document.getElementById('showActiveUsers'),
+                    document.getElementById('showActiveGroups')
+                ];
+                return checkboxes[index].checked;
+            });
+            
             trendChart = new Chart(ctx, {
-                type: 'line',
+                type: chartType,
                 data: {
                     labels: dates,
-                    datasets: [
-                        {
-                            label: '总请求数',
-                            data: totalRequests,
-                            borderColor: 'rgba(214, 51, 132, 1)',
-                            backgroundColor: 'rgba(214, 51, 132, 0.1)',
-                            borderWidth: 3,
-                            fill: true,
-                            tension: 0.4,
-                            pointBackgroundColor: 'rgba(214, 51, 132, 1)',
-                            pointBorderColor: '#fff',
-                            pointBorderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6
-                        },
-                        {
-                            label: '活跃用户数',
-                            data: activeUsers,
-                            borderColor: 'rgba(255, 107, 139, 1)',
-                            backgroundColor: 'rgba(255, 107, 139, 0.1)',
-                            borderWidth: 3,
-                            fill: true,
-                            tension: 0.4,
-                            pointBackgroundColor: 'rgba(255, 107, 139, 1)',
-                            pointBorderColor: '#fff',
-                            pointBorderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6
-                        },
-                        {
-                            label: '活跃群组数',
-                            data: activeGroups,
-                            borderColor: 'rgba(255, 158, 181, 1)',
-                            backgroundColor: 'rgba(255, 158, 181, 0.1)',
-                            borderWidth: 3,
-                            fill: true,
-                            tension: 0.4,
-                            pointBackgroundColor: 'rgba(255, 158, 181, 1)',
-                            pointBorderColor: '#fff',
-                            pointBorderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6
-                        }
-                    ]
+                    datasets: filteredDatasets
                 },
                 options: {
                     responsive: true,
@@ -1991,18 +2063,21 @@
                         legend: {
                             position: 'top',
                             labels: {
-                                color: '#5a3d5c',
+                                color: themeColors.text,
                                 font: {
                                     size: 12,
                                     weight: 'bold'
                                 },
-                                padding: 15
+                                padding: 15,
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                pointStyleWidth: 8
                             }
                         },
                         title: {
                             display: true,
                             text: `${periodText} - 使用趋势分析`,
-                            color: '#d63384',
+                            color: isDarkMode ? '#ff9eb5' : '#d63384',
                             font: {
                                 size: 16,
                                 weight: 'bold'
@@ -2012,23 +2087,67 @@
                         tooltip: {
                             mode: 'index',
                             intersect: false,
-                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                            titleColor: '#d63384',
-                            bodyColor: '#5a3d5c',
-                            borderColor: 'rgba(255, 182, 193, 0.5)',
+                            backgroundColor: themeColors.tooltipBg,
+                            titleColor: isDarkMode ? '#ff9eb5' : '#d63384',
+                            bodyColor: themeColors.text,
+                            borderColor: themeColors.tooltipBorder,
                             borderWidth: 1,
                             cornerRadius: 8,
-                            padding: 12
+                            padding: 12,
+                            displayColors: true,
+                            callbacks: {
+                                title: function(context) {
+                                    return `日期: ${context[0].label}`;
+                                },
+                                afterBody: function(context) {
+                                    // 添加更多详情信息
+                                    let details = [];
+                                    
+                                    // 如果有summary数据，添加统计信息
+                                    if (trendsData.summary) {
+                                        const summary = trendsData.summary;
+                                        details.push(`\n📊 统计摘要:`);
+                                        details.push(`总请求数平均: ${summary.total_requests.average}`);
+                                        details.push(`活跃用户平均: ${summary.active_users.average}`);
+                                        details.push(`活跃群组平均: ${summary.active_groups.average}`);
+                                    }
+                                    
+                                    return details;
+                                }
+                            }
+                        },
+                        zoom: {
+                            zoom: {
+                                wheel: {
+                                    enabled: true,
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x',
+                                limits: {
+                                    x: { min: 0, max: dates.length - 1 },
+                                    y: { min: 0 }
+                                }
+                            },
+                            pan: {
+                                enabled: true,
+                                mode: 'x',
+                                limits: {
+                                    x: { min: 0, max: dates.length - 1 },
+                                    y: { min: 0 }
+                                }
+                            }
                         }
                     },
                     scales: {
                         x: {
                             grid: {
-                                color: 'rgba(255, 182, 193, 0.2)',
+                                color: themeColors.grid,
                                 borderDash: [5, 5]
                             },
                             ticks: {
-                                color: '#8b5a7c',
+                                color: themeColors.textSecondary,
                                 font: {
                                     size: 11
                                 },
@@ -2037,11 +2156,11 @@
                         },
                         y: {
                             grid: {
-                                color: 'rgba(255, 182, 193, 0.2)',
+                                color: themeColors.grid,
                                 borderDash: [5, 5]
                             },
                             ticks: {
-                                color: '#8b5a7c',
+                                color: themeColors.textSecondary,
                                 font: {
                                     size: 11
                                 }
@@ -2060,6 +2179,123 @@
                     }
                 }
             });
+            
+            // 更新统计摘要卡片
+            updateTrendSummary(trendsData);
+        }
+        
+        // 切换数据集显示/隐藏
+        function toggleDataset(datasetType) {
+            // 重新加载图表，根据复选框状态过滤数据集
+            loadTrends();
+        }
+        
+        // 切换图表类型
+        function changeChartType() {
+            // 重新加载图表，使用新的图表类型
+            loadTrends();
+        }
+        
+        // 更新统计摘要卡片
+        function updateTrendSummary(trendsData) {
+            const summaryContainer = document.getElementById('trendSummary');
+            if (!summaryContainer || !trendsData.summary) {
+                summaryContainer.innerHTML = '';
+                return;
+            }
+            
+            const summary = trendsData.summary;
+            
+            // 检查是否为深色模式
+            const isDarkMode = document.body.classList.contains('dark-mode');
+            const cardBg = isDarkMode ? 'rgba(40, 40, 60, 0.5)' : 'rgba(255, 240, 245, 0.5)';
+            const cardBorder = isDarkMode ? 'rgba(60, 60, 80, 0.5)' : 'rgba(255, 182, 193, 0.5)';
+            const cardText = isDarkMode ? '#f0f0f0' : '#5a3d5c';
+            const cardTextSecondary = isDarkMode ? '#adb5bd' : '#8b5a7c';
+            
+            summaryContainer.innerHTML = `
+                <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff9eb5;">
+                    <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">📊 总请求数</h4>
+                    <p style="color: ${cardText};"><strong>平均值:</strong> ${summary.total_requests.average}</p>
+                    <p style="color: ${cardText};"><strong>峰值:</strong> ${summary.total_requests.peak}</p>
+                    <p style="color: ${cardText};"><strong>最小值:</strong> ${summary.total_requests.min}</p>
+                    <p style="color: ${cardText};"><strong>总计:</strong> ${summary.total_requests.total}</p>
+                    <p style="color: ${cardText};"><strong>增长率:</strong> ${summary.total_requests.growth_rate}%</p>
+                </div>
+                <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
+                    <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">👥 活跃用户</h4>
+                    <p style="color: ${cardText};"><strong>平均值:</strong> ${summary.active_users.average}</p>
+                    <p style="color: ${cardText};"><strong>峰值:</strong> ${summary.active_users.peak}</p>
+                    <p style="color: ${cardText};"><strong>最小值:</strong> ${summary.active_users.min}</p>
+                    <p style="color: ${cardText};"><strong>总计:</strong> ${summary.active_users.total}</p>
+                    <p style="color: ${cardText};"><strong>增长率:</strong> ${summary.active_users.growth_rate}%</p>
+                </div>
+                <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff85a1;">
+                    <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">👥 活跃群组</h4>
+                    <p style="color: ${cardText};"><strong>平均值:</strong> ${summary.active_groups.average}</p>
+                    <p style="color: ${cardText};"><strong>峰值:</strong> ${summary.active_groups.peak}</p>
+                    <p style="color: ${cardText};"><strong>最小值:</strong> ${summary.active_groups.min}</p>
+                    <p style="color: ${cardText};"><strong>总计:</strong> ${summary.active_groups.total}</p>
+                    <p style="color: ${cardText};"><strong>增长率:</strong> ${summary.active_groups.growth_rate}%</p>
+                </div>
+                <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
+                    <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">📅 统计周期</h4>
+                    <p style="color: ${cardText};"><strong>周期:</strong> ${getPeriodText(trendsData.period)}</p>
+                    <p style="color: ${cardText};"><strong>天数:</strong> ${summary.days_count}</p>
+                    <p style="color: ${cardText};"><strong>开始日期:</strong> ${trendsData.data[0].date}</p>
+                    <p style="color: ${cardText};"><strong>结束日期:</strong> ${trendsData.data[trendsData.data.length - 1].date}</p>
+                </div>
+            `;
+        }
+        
+        // 获取周期文本
+        function getPeriodText(period) {
+            switch(period) {
+                case 'day':
+                    return '最近7天';
+                case 'week':
+                    return '最近4周';
+                case 'month':
+                    return '最近3个月';
+                default:
+                    return '趋势分析';
+            }
+        }
+        
+        // 导出趋势数据
+        function exportTrendData() {
+            if (!trendChart) return;
+            
+            const chartData = trendChart.data;
+            const labels = chartData.labels;
+            const datasets = chartData.datasets;
+            
+            // 创建CSV内容
+            let csvContent = '日期';
+            datasets.forEach(dataset => {
+                csvContent += `,${dataset.label}`;
+            });
+            csvContent += '\n';
+            
+            // 添加数据行
+            labels.forEach((label, index) => {
+                csvContent += `${label}`;
+                datasets.forEach(dataset => {
+                    csvContent += `,${dataset.data[index] || 0}`;
+                });
+                csvContent += '\n';
+            });
+            
+            // 创建下载链接
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `趋势数据_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
         
         function showError(message) {
