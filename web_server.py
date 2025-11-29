@@ -335,12 +335,31 @@ class WebServer:
         self._server_running = False
         self._server_instance = None
         self._last_error = None  # 记录最后一次错误信息
-        self._start_time = None  # 服务器启动时间
+        self._start_time = time.time()  # 服务器启动时间
+        
+        # 性能优化：添加缓存机制
+        self._cache = {
+            'stats': None,
+            'config': None,
+            'users': None,
+            'groups': None,
+            'trends': {},
+            'cache_times': {
+                'stats': 0,
+                'config': 0,
+                'users': 0,
+                'groups': 0
+            },
+            'cache_duration': 60  # 缓存持续时间（秒）
+        }
         
         # 检查端口占用并自动切换
         self._check_and_adjust_port()
         
         self._setup_routes()
+        
+        # 设置响应头，优化性能
+        self._setup_performance_headers()
     
     def _log(self, message):
         """日志记录方法"""
@@ -443,6 +462,25 @@ class WebServer:
         
         # 设置API路由
         self._setup_api_routes()
+    
+    def _setup_performance_headers(self):
+        """设置响应头，优化性能"""
+        @self.app.after_request
+        def add_performance_headers(response):
+            # 设置缓存控制头
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            
+            # 设置安全头
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['X-Frame-Options'] = 'DENY'
+            response.headers['X-XSS-Protection'] = '1; mode=block'
+            
+            # 设置内容安全策略
+            response.headers['Content-Security-Policy'] = "default-src 'self'"
+            
+            return response
 
     def _setup_auth_helpers(self):
         """设置认证相关的辅助函数"""
@@ -509,6 +547,10 @@ class WebServer:
         self._setup_users_api()
         self._setup_groups_api()
         self._setup_trends_api()
+        self._setup_health_api()
+        self._setup_management_api()
+        self._setup_version_api()
+        self._setup_performance_headers()
 
     def _setup_stats_api(self):
         """设置统计API路由"""
@@ -582,6 +624,155 @@ class WebServer:
                     'success': False,
                     'error': '获取趋势分析数据失败'
                 }), 500
+    
+    def _setup_health_api(self):
+        """设置健康检查API路由"""
+        @self.app.route('/api/health')
+        def health_check():
+            """健康检查端点"""
+            try:
+                # 检查Redis连接
+                redis_status = self._is_redis_connected()
+                
+                # 检查Web服务器状态
+                server_status = self.is_running()
+                
+                # 检查插件状态
+                plugin_status = self.plugin is not None
+                
+                return jsonify({
+                    'success': True,
+                    'status': 'healthy' if redis_status and server_status and plugin_status else 'unhealthy',
+                    'components': {
+                        'redis': 'connected' if redis_status else 'disconnected',
+                        'web_server': 'running' if server_status else 'stopped',
+                        'plugin': 'loaded' if plugin_status else 'unloaded'
+                    },
+                    'timestamp': datetime.datetime.now().isoformat(),
+                    'version': 'v2.8.0'
+                })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'status': 'error',
+                    'error': str(e),
+                    'timestamp': datetime.datetime.now().isoformat()
+                }), 500
+    
+    def _setup_management_api(self):
+        """设置管理API路由"""
+        @self.app.route('/api/management/reset-stats', methods=['POST'])
+        @self.require_auth
+        def reset_stats():
+            """重置统计数据"""
+            try:
+                # 重置Redis中的统计数据
+                if self.plugin and self.plugin.redis:
+                    today = self.plugin._get_reset_period_date()
+                    pattern = f"astrbot:daily_limit:{today}:*"
+                    keys = self.plugin.redis.keys(pattern)
+                    if keys:
+                        self.plugin.redis.delete(*keys)
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': '统计数据已重置',
+                        'reset_count': len(keys)
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Redis连接不可用'
+                    }), 500
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+        
+        @self.app.route('/api/management/cleanup-old-data', methods=['POST'])
+        @self.require_auth
+        def cleanup_old_data():
+            """清理旧数据"""
+            try:
+                # 清理Redis中的旧数据
+                if self.plugin and self.plugin.redis:
+                    # 获取当前日期
+                    today = datetime.datetime.now().strftime("%Y-%m-%d")
+                    # 匹配所有旧日期的数据
+                    pattern = "astrbot:daily_limit:*"
+                    keys = self.plugin.redis.keys(pattern)
+                    
+                    # 过滤出旧数据键
+                    old_keys = []
+                    for key in keys:
+                        parts = key.split(':')
+                        if len(parts) >= 4:
+                            date_str = parts[3]
+                            if date_str != today:
+                                old_keys.append(key)
+                    
+                    # 删除旧数据
+                    if old_keys:
+                        self.plugin.redis.delete(*old_keys)
+                    
+                    # 清理本地趋势数据
+                    cleaned_files = self.trend_storage.cleanup_old_data()
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': '旧数据已清理',
+                        'redis_keys_cleaned': len(old_keys),
+                        'local_files_cleaned': cleaned_files
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Redis连接不可用'
+                    }), 500
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+    
+    def _setup_version_api(self):
+        """设置版本信息API路由"""
+        @self.app.route('/api/version')
+        def get_version():
+            """获取版本信息"""
+            return jsonify({
+                'success': True,
+                'data': {
+                    'version': 'v2.8.0',
+                    'name': 'Daily Limit Plugin',
+                    'author': 'left666 & Sakura520222',
+                    'repo': 'https://github.com/left666/astrbot_plugin_daily_limit',
+                    'description': '限制用户每日调用大模型的次数'
+                }
+            })
+    
+    def _setup_performance_headers(self):
+        """设置性能优化响应头"""
+        @self.app.after_request
+        def add_performance_headers(response):
+            # 启用浏览器缓存
+            response.headers['Cache-Control'] = 'public, max-age=300'
+            # 启用Gzip压缩
+            response.headers['Content-Encoding'] = 'gzip'
+            # 启用跨域资源共享
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            # 启用HTTP严格传输安全
+            response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+            # 防止XSS攻击
+            response.headers['X-XSS-Protection'] = '1; mode=block'
+            # 防止点击劫持
+            response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+            # 防止MIME类型嗅探
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            # 启用内容安全策略
+            response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:;"
+            return response
 
     def _handle_api_request(self, api_function):
         """处理API请求的通用方法"""
@@ -1307,6 +1498,17 @@ class WebServer:
             return None
         
         return password
+    
+    def _is_redis_connected(self):
+        """检查Redis是否连接"""
+        if not self.plugin.redis:
+            return False
+        
+        try:
+            self.plugin.redis.ping()
+            return True
+        except Exception:
+            return False
     
     def get_access_url(self):
         """获取访问链接"""

@@ -42,7 +42,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.7.9",
+    version="v2.8.0",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -1286,6 +1286,12 @@ class DailyLimitPlugin(star.Star):
         usage_stats_key = f"usage_type:{usage_type}"
         pipe.hincrby(trend_key, usage_stats_key, 1)
         
+        # 更新小时统计数据（仅对每日趋势数据有效）
+        if "daily" in trend_key:
+            current_hour = datetime.datetime.now().strftime("%H:00")
+            hour_stats_key = f"hour:{current_hour}"
+            pipe.hincrby(trend_key, hour_stats_key, 1)
+        
         # 设置过期时间（月数据保留6个月，周数据保留12周，日数据保留30天）
         if "monthly" in trend_key:
             pipe.expire(trend_key, 180 * 24 * 3600)  # 6个月
@@ -1628,11 +1634,27 @@ class DailyLimitPlugin(star.Star):
 
     def _update_all_stats(self, keys_to_update):
         """更新所有统计信息"""
+        pipe = self.redis.pipeline()
+        
         # 更新用户统计
-        self.redis.hincrby(keys_to_update["user_stats"], "total_usage", 1)
+        pipe.hincrby(keys_to_update["user_stats"], "total_usage", 1)
+        pipe.hincrby(keys_to_update["user_stats"], "last_activity", int(time.time()))
         
         # 更新全局统计
-        self.redis.hincrby(keys_to_update["global_stats"], "total_requests", 1)
+        pipe.hincrby(keys_to_update["global_stats"], "total_requests", 1)
+        pipe.hincrby(keys_to_update["global_stats"], "last_activity", int(time.time()))
+        
+        # 如果有群组统计，也更新群组统计
+        if "group_stats" in keys_to_update:
+            pipe.hincrby(keys_to_update["group_stats"], "total_requests", 1)
+            pipe.hincrby(keys_to_update["group_stats"], "last_activity", int(time.time()))
+        
+        # 如果有群组用户统计，也更新
+        if "group_user_stats" in keys_to_update:
+            pipe.hincrby(keys_to_update["group_user_stats"], "total_usage", 1)
+            pipe.hincrby(keys_to_update["group_user_stats"], "last_activity", int(time.time()))
+        
+        pipe.execute()
 
     def _get_daily_trend_data(self, days: int, current_time: datetime.datetime) -> dict:
         """获取日趋势数据
@@ -1746,7 +1768,11 @@ class DailyLimitPlugin(star.Star):
                 "total_requests": int(data.get("total_requests", 0)),
                 "active_users": 0,
                 "active_groups": 0,
-                "usage_types": {}
+                "usage_types": {},
+                "avg_requests_per_user": 0,
+                "avg_requests_per_group": 0,
+                "peak_hour": "00:00",
+                "peak_requests": 0
             }
             
             # 统计活跃用户和群组
@@ -1765,6 +1791,19 @@ class DailyLimitPlugin(star.Star):
                 elif key.startswith("usage_type:"):
                     usage_type = key.split(":")[1]
                     stats["usage_types"][usage_type] = int(value)
+                elif key.startswith("hour:"):
+                    # 处理小时统计数据
+                    hour = key.split(":")[1]
+                    requests = int(value)
+                    if requests > stats["peak_requests"]:
+                        stats["peak_requests"] = requests
+                        stats["peak_hour"] = hour
+            
+            # 计算平均值
+            if stats["active_users"] > 0:
+                stats["avg_requests_per_user"] = round(stats["total_requests"] / stats["active_users"], 2)
+            if stats["active_groups"] > 0:
+                stats["avg_requests_per_group"] = round(stats["total_requests"] / stats["active_groups"], 2)
                     
             return stats
             
@@ -2427,7 +2466,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.7.9 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.8.0 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -2491,7 +2530,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.7.9 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.8.0 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -2988,13 +3027,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.7.9 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.8.0 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.7.9 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.8.0 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -4438,7 +4477,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.7.9")
+            current_version = self.config.get("version", "v2.8.0")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -4576,7 +4615,7 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.7.9")
+            current_version = self.config.get("version", "v2.8.0")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
@@ -4607,7 +4646,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.7.9")
+            current_version = self.config.get("version", "v2.8.0")
             
             # 构建版本信息消息
             version_msg = f"📦 日调用限制插件版本信息\n"
@@ -4651,7 +4690,7 @@ class DailyLimitPlugin(star.Star):
 ░░░░░░░░░░   ░░░░░   ░░░░░ ░░░░░ ░░░░░░░░░░░    ░░░░░       ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░    ░░░░░    
                                                                                                                 
                                                                                                                                                                                                       
-                                       每日调用限制插件 v2.7.9                       
+                                       每日调用限制插件 v2.8.0                       
                                   作者: left666 & Sakura520222                  
     """
 
