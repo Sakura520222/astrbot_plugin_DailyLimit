@@ -27,19 +27,86 @@
         .sakura {
             position: absolute;
             top: -50px;
+            opacity: 0.7;
+            animation: fall linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+        
+        /* 樱花样式1 */
+        .sakura.style1 {
             width: 30px;
             height: 30px;
             background: radial-gradient(circle, #fff 30%, transparent 70%);
             border-radius: 50% 0 50% 50%;
-            opacity: 0.7;
-            animation: fall linear infinite;
-            z-index: 0;
+        }
+        
+        /* 樱花样式2 */
+        .sakura.style2 {
+            width: 25px;
+            height: 25px;
+            background: radial-gradient(circle, #ffeef2 30%, transparent 70%);
+            border-radius: 50% 50% 0 50%;
+        }
+        
+        /* 樱花样式3 */
+        .sakura.style3 {
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #fff5f7 30%, transparent 70%);
+            border-radius: 0 50% 50% 50%;
+        }
+        
+        /* 樱花样式4 */
+        .sakura.style4 {
+            width: 35px;
+            height: 35px;
+            background: radial-gradient(circle, #ffeff4 30%, transparent 70%);
+            border-radius: 50% 50% 50% 0;
         }
         
         @keyframes fall {
             to {
                 transform: translateY(100vh) rotate(360deg);
                 opacity: 0;
+            }
+        }
+        
+        /* 添加左右摇摆效果 */
+        @keyframes sway {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(50px);
+            }
+        }
+        
+        /* 不同摇摆幅度的动画 */
+        @keyframes sway1 {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(30px);
+            }
+        }
+        
+        @keyframes sway2 {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(-30px);
+            }
+        }
+        
+        @keyframes sway3 {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(-50px);
             }
         }
         
@@ -157,14 +224,59 @@
             font-size: 0.8rem;
         }
         
-        @media (max-width: 480px) {
+        /* 响应式设计 */
+        @media (max-width: 768px) {
             .login-container {
-                margin: 20px;
-                padding: 30px 25px;
+                margin: 30px;
+                padding: 35px;
+                max-width: 350px;
             }
             
             .login-header h1 {
-                font-size: 1.7rem;
+                font-size: 1.8rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .login-container {
+                margin: 20px;
+                padding: 25px 20px;
+                max-width: calc(100% - 40px);
+            }
+            
+            .login-header h1 {
+                font-size: 1.6rem;
+            }
+            
+            .login-header p {
+                font-size: 0.9rem;
+            }
+            
+            .form-group input {
+                padding: 10px 12px;
+                font-size: 0.9rem;
+            }
+            
+            .login-btn {
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+            
+            .login-footer {
+                font-size: 0.75rem;
+            }
+        }
+        
+        /* 小屏幕优化 */
+        @media (max-width: 320px) {
+            .login-container {
+                margin: 10px;
+                padding: 20px 15px;
+                max-width: calc(100% - 20px);
+            }
+            
+            .login-header h1 {
+                font-size: 1.4rem;
             }
         }
     </style>
@@ -188,7 +300,12 @@
             
             <div class="form-group">
                 <label for="password">访问密码</label>
-                <input type="password" id="password" name="password" placeholder="请输入密码" required>
+                <div style="position: relative; width: 100%;">
+                    <input type="password" id="password" name="password" placeholder="请输入密码" required style="padding-right: 45px; border-radius: 10px; border: 2px solid rgba(255, 182, 193, 0.5); width: 100%; box-sizing: border-box;">
+                    <button type="button" id="togglePassword" style="position: absolute; right: 2px; top: 50%; transform: translateY(-50%); height: calc(100% - 4px); background: transparent; border: none; cursor: pointer; font-size: 16px; color: #8b5a7c; padding: 0 12px; display: flex; align-items: center; justify-content: center; z-index: 10; border-radius: 0 8px 8px 0;">
+                        👁️
+                    </button>
+                </div>
             </div>
             
             <button type="submit" class="login-btn">🌸 登录</button>
@@ -204,22 +321,30 @@
         function createSakura() {
             const container = document.getElementById('sakuraContainer');
             const sakura = document.createElement('div');
-            sakura.className = 'sakura';
+            
+            // 随机选择樱花样式 (1-4)
+            const styleNumber = Math.floor(Math.random() * 4) + 1;
+            sakura.className = `sakura style${styleNumber}`;
             
             // 随机位置
             sakura.style.left = Math.random() * 100 + '%';
             
-            // 随机大小
-            const size = Math.random() * 20 + 15;
-            sakura.style.width = size + 'px';
-            sakura.style.height = size + 'px';
-            
-            // 随机动画时长
-            const duration = Math.random() * 10 + 15;
+            // 随机动画时长 (10-30秒)
+            const duration = Math.random() * 20 + 10;
             sakura.style.animationDuration = duration + 's';
             
-            // 随机透明度
-            sakura.style.opacity = Math.random() * 0.5 + 0.3;
+            // 随机透明度 (0.3-0.9)
+            sakura.style.opacity = Math.random() * 0.6 + 0.3;
+            
+            // 随机摇摆效果
+            const swayAnimations = ['sway1', 'sway2', 'sway3'];
+            const swayAnimation = swayAnimations[Math.floor(Math.random() * swayAnimations.length)];
+            sakura.style.animationName = `fall, ${swayAnimation}`;
+            sakura.style.animationDelay = `0s, ${Math.random() * 2}s`;
+            
+            // 随机摇摆幅度
+            const swayIntensity = Math.random() * 20 + 10;
+            sakura.style.transform = `translateX(${swayIntensity}px)`;
             
             container.appendChild(sakura);
             
@@ -231,21 +356,32 @@
         
         // 创建多个樱花
         function createSakuras() {
-            for (let i = 0; i < 15; i++) {
+            // 初始创建30个樱花，分布在不同时间
+            for (let i = 0; i < 30; i++) {
                 setTimeout(() => {
                     createSakura();
-                }, Math.random() * 5000);
+                }, Math.random() * 3000);
             }
         }
         
-        // 持续创建樱花
-        setInterval(createSakura, 2000);
+        // 持续创建樱花，每300毫秒创建一个
+        setInterval(createSakura, 300);
         
         // 初始创建樱花
         createSakuras();
         
         // 自动聚焦密码输入框
         document.getElementById('password').focus();
+        
+        // 密码可见性切换功能
+        const togglePasswordBtn = document.getElementById('togglePassword');
+        const passwordInput = document.getElementById('password');
+        
+        togglePasswordBtn.addEventListener('click', () => {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            togglePasswordBtn.textContent = type === 'password' ? '👁️' : '🙈';
+        });
     </script>
 </body>
 </html>

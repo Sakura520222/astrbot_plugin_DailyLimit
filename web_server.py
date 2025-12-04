@@ -636,14 +636,20 @@ class WebServer:
         """
         获取使用统计信息
         
-        从Redis中获取活跃用户数、活跃群组数和总请求数等关键统计指标。
+        从Redis中获取活跃用户数、活跃群组数和总请求数等关键统计指标，
+        包括平均请求数、峰值请求数、峰值小时等扩展指标。
         
         返回：
             dict: 包含统计信息的字典，格式为：
                 {
                     'active_users': int,  # 活跃用户数
                     'active_groups': int, # 活跃群组数  
-                    'total_requests': int # 总请求数
+                    'total_requests': int, # 总请求数
+                    'avg_requests_per_user': float, # 平均每个用户请求数
+                    'peak_hour_requests': int, # 峰值小时请求数
+                    'peak_hour': str, # 峰值小时
+                    'total_users': int, # 总用户数
+                    'total_groups': int # 总群组数
                 }
         """
         if not self.plugin.redis:
@@ -664,6 +670,18 @@ class WebServer:
         
         # 计算总请求数
         stats['total_requests'] = self._calculate_total_requests(user_keys)
+        
+        # 计算平均每个用户请求数
+        if stats['active_users'] > 0:
+            stats['avg_requests_per_user'] = round(stats['total_requests'] / stats['active_users'], 2)
+        else:
+            stats['avg_requests_per_user'] = 0
+        
+        # 获取今日所有小时的统计数据
+        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        peak_hour_data = self._get_today_peak_hour(today_date)
+        stats['peak_hour_requests'] = peak_hour_data['peak_requests']
+        stats['peak_hour'] = peak_hour_data['peak_hour']
         
         # 保存每日统计数据到本地存储
         self._save_daily_stats(stats)
@@ -703,7 +721,49 @@ class WebServer:
             'total_requests': 0,
             'active_users': 0,
             'active_groups': 0,
-            'date': date_str
+            'date': date_str,
+            'avg_requests_per_user': 0,
+            'peak_hour_requests': 0,
+            'peak_hour': '',
+            'total_users': 0,
+            'total_groups': 0
+        }
+    
+    def _get_today_peak_hour(self, today_date):
+        """
+        获取今日的峰值小时数据
+        
+        参数：
+            today_date (str): 今日日期，格式为YYYY-MM-DD
+            
+        返回：
+            dict: 包含峰值请求数和峰值小时的字典
+        """
+        peak_requests = 0
+        peak_hour = ""
+        
+        try:
+            # 遍历今日所有小时（00-23）
+            for hour in range(24):
+                hour_str = f"{hour:02d}"
+                hour_key = f"astrbot:trend_stats:hourly:{today_date}-{hour_str}"
+                
+                # 获取该小时的请求数
+                request_count = self.plugin.redis.hget(hour_key, "total_requests")
+                if request_count:
+                    request_count = int(request_count)
+                    if request_count > peak_requests:
+                        peak_requests = request_count
+                        peak_hour = hour_str
+        except Exception as e:
+            if self.plugin:
+                self.plugin._log_error("获取峰值小时数据失败: {}", str(e))
+            else:
+                print(f"获取峰值小时数据失败: {e}")
+        
+        return {
+            'peak_requests': peak_requests,
+            'peak_hour': peak_hour
         }
 
     def _get_user_keys_for_date(self, date_str):

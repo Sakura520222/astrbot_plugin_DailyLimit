@@ -1232,17 +1232,27 @@ class DailyLimitPlugin(star.Star):
         if date_obj is None:
             date_obj = datetime.datetime.now()
         return date_obj.strftime("%Y-%m")
+    
+    def _get_hour_key(self, date_obj=None):
+        """获取小时键（格式：YYYY-MM-DD-HH）"""
+        if date_obj is None:
+            date_obj = datetime.datetime.now()
+        return date_obj.strftime("%Y-%m-%d-%H")
 
     def _record_trend_data(self, user_id, group_id=None, usage_type="llm_request"):
         """记录趋势分析数据
         
-        记录日、周、月三个维度的使用趋势数据
+        记录小时、日、周、月四个维度的使用趋势数据
         """
         if not self.redis:
             return False
             
         try:
             current_time = datetime.datetime.now()
+            
+            # 记录小时趋势数据，精确到小时级别
+            hour_key = self._get_trend_stats_key("hourly", self._get_hour_key(current_time))
+            self._update_trend_stats(hour_key, user_id, group_id, usage_type)
             
             # 记录日趋势数据，使用与主逻辑相同的日期计算
             daily_key = self._get_trend_stats_key("daily", self._get_reset_period_date())
@@ -1265,7 +1275,9 @@ class DailyLimitPlugin(star.Star):
 
     def _update_trend_stats(self, trend_key, user_id, group_id, usage_type):
         """更新趋势统计数据"""
-        # 使用Redis哈希存储趋势数据
+        current_time = datetime.datetime.now()
+        
+        # 第一阶段：执行所有写操作，更新各种统计数据
         pipe = self.redis.pipeline()
         
         # 更新总请求数
@@ -1284,15 +1296,58 @@ class DailyLimitPlugin(star.Star):
         usage_stats_key = f"usage_type:{usage_type}"
         pipe.hincrby(trend_key, usage_stats_key, 1)
         
-        # 设置过期时间（月数据保留6个月，周数据保留12周，日数据保留30天）
+        # 如果是小时统计，记录更详细的指标
+        if "hourly" in trend_key:
+            # 记录请求计数
+            pipe.hincrby(trend_key, "request_count", 1)
+            
+            # 记录当前时间戳
+            pipe.hset(trend_key, "last_request_time", current_time.timestamp())
+            
+            # 更新活跃用户集
+            pipe.sadd(f"{trend_key}:active_users", user_id)
+            
+            # 如果有群组，更新活跃群组集
+            if group_id:
+                pipe.sadd(f"{trend_key}:active_groups", group_id)
+        
+        # 记录统计数据的更新时间
+        pipe.hset(trend_key, "updated_at", current_time.timestamp())
+        
+        # 设置过期时间（月数据保留6个月，周数据保留12周，日数据保留30天，小时数据保留7天）
         if "monthly" in trend_key:
             pipe.expire(trend_key, 180 * 24 * 3600)  # 6个月
         elif "weekly" in trend_key:
             pipe.expire(trend_key, 84 * 24 * 3600)   # 12周
+        elif "daily" in trend_key:
+            pipe.expire(trend_key, 30 * 24 * 3600)    # 30天
+        elif "hourly" in trend_key:
+            pipe.expire(trend_key, 7 * 24 * 3600)     # 7天
+            # 同时设置活跃用户和群组集合的过期时间
+            pipe.expire(f"{trend_key}:active_users", 7 * 24 * 3600)
+            pipe.expire(f"{trend_key}:active_groups", 7 * 24 * 3600)
         else:  # daily
             pipe.expire(trend_key, 30 * 24 * 3600)   # 30天
         
+        # 执行第一阶段的所有命令
         pipe.execute()
+        
+        # 第二阶段：检查并更新峰值请求数（仅对非小时统计）
+        if "hourly" not in trend_key:
+            # 单独获取当前总请求数和峰值，不使用Pipeline
+            current_total = self.redis.hget(trend_key, "total_requests")
+            current_peak = self.redis.hget(trend_key, "peak_requests")
+            
+            # 转换为整数进行比较
+            current_total_int = int(current_total) if current_total else 0
+            current_peak_int = int(current_peak) if current_peak else 0
+            
+            # 如果当前总请求数大于峰值，更新峰值
+            if current_total_int > current_peak_int:
+                peak_pipe = self.redis.pipeline()
+                peak_pipe.hset(trend_key, "peak_requests", current_total_int)
+                peak_pipe.hset(trend_key, "peak_time", current_time.timestamp())
+                peak_pipe.execute()
 
     def _should_skip_message(self, message_str):
         """检查消息是否应该忽略处理"""
