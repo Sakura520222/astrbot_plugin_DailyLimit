@@ -2,7 +2,6 @@ import json
 import redis
 import redis.exceptions
 import datetime
-import threading
 import sys
 import os
 import asyncio
@@ -13,8 +12,7 @@ import astrbot.api.star as star  # type: ignore
 from astrbot.api.event import (filter,  # type: ignore
                                AstrMessageEvent,
                                MessageEventResult,
-                               MessageChain,
-                               EventResultType)
+                               MessageChain)
 from astrbot.api.platform import MessageType  # type: ignore
 from astrbot.api.event.filter import PermissionType  # type: ignore
 from astrbot.api import AstrBotConfig  # type: ignore
@@ -32,7 +30,7 @@ try:
         sys.path.insert(0, current_dir)
     
     from web_server import WebServer
-except ImportError as e:
+except ImportError:
     # 注意：在模块级别不能使用self，这里只是定义变量
     WebServer = None
     # 实际的日志记录将在插件初始化后进行
@@ -42,7 +40,7 @@ except ImportError as e:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.8.1",
+    version="v2.8.2",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -1234,17 +1232,27 @@ class DailyLimitPlugin(star.Star):
         if date_obj is None:
             date_obj = datetime.datetime.now()
         return date_obj.strftime("%Y-%m")
+    
+    def _get_hour_key(self, date_obj=None):
+        """获取小时键（格式：YYYY-MM-DD-HH）"""
+        if date_obj is None:
+            date_obj = datetime.datetime.now()
+        return date_obj.strftime("%Y-%m-%d-%H")
 
     def _record_trend_data(self, user_id, group_id=None, usage_type="llm_request"):
         """记录趋势分析数据
         
-        记录日、周、月三个维度的使用趋势数据
+        记录小时、日、周、月四个维度的使用趋势数据
         """
         if not self.redis:
             return False
             
         try:
             current_time = datetime.datetime.now()
+            
+            # 记录小时趋势数据，精确到小时级别
+            hour_key = self._get_trend_stats_key("hourly", self._get_hour_key(current_time))
+            self._update_trend_stats(hour_key, user_id, group_id, usage_type)
             
             # 记录日趋势数据，使用与主逻辑相同的日期计算
             daily_key = self._get_trend_stats_key("daily", self._get_reset_period_date())
@@ -1267,34 +1275,96 @@ class DailyLimitPlugin(star.Star):
 
     def _update_trend_stats(self, trend_key, user_id, group_id, usage_type):
         """更新趋势统计数据"""
-        # 使用Redis哈希存储趋势数据
+        current_time = datetime.datetime.now()
+        
+        # 执行主要统计更新
+        self._update_trend_basic_stats(trend_key, user_id, group_id, usage_type, current_time)
+        
+        # 处理小时统计的特殊逻辑
+        if "hourly" in trend_key:
+            self._update_hourly_stats(trend_key, user_id, group_id, current_time)
+        
+        # 更新峰值请求数（非小时统计）
+        if "hourly" not in trend_key:
+            self._update_peak_stats(trend_key, current_time)
+    
+    def _update_trend_basic_stats(self, trend_key, user_id, group_id, usage_type, current_time):
+        """更新趋势基本统计数据"""
         pipe = self.redis.pipeline()
         
         # 更新总请求数
         pipe.hincrby(trend_key, "total_requests", 1)
         
         # 更新用户统计
-        user_stats_key = f"user:{user_id}"
-        pipe.hincrby(trend_key, user_stats_key, 1)
+        pipe.hincrby(trend_key, f"user:{user_id}", 1)
         
         # 更新群组统计（如果有群组）
         if group_id:
-            group_stats_key = f"group:{group_id}"
-            pipe.hincrby(trend_key, group_stats_key, 1)
+            pipe.hincrby(trend_key, f"group:{group_id}", 1)
         
         # 更新使用类型统计
-        usage_stats_key = f"usage_type:{usage_type}"
-        pipe.hincrby(trend_key, usage_stats_key, 1)
+        pipe.hincrby(trend_key, f"usage_type:{usage_type}", 1)
         
-        # 设置过期时间（月数据保留6个月，周数据保留12周，日数据保留30天）
-        if "monthly" in trend_key:
-            pipe.expire(trend_key, 180 * 24 * 3600)  # 6个月
-        elif "weekly" in trend_key:
-            pipe.expire(trend_key, 84 * 24 * 3600)   # 12周
-        else:  # daily
-            pipe.expire(trend_key, 30 * 24 * 3600)   # 30天
+        # 记录统计数据的更新时间
+        pipe.hset(trend_key, "updated_at", current_time.timestamp())
+        
+        # 设置过期时间
+        pipe.expire(trend_key, self._get_trend_expiry_seconds(trend_key))
         
         pipe.execute()
+    
+    def _get_trend_expiry_seconds(self, trend_key):
+        """获取趋势数据的过期时间（秒）"""
+        if "monthly" in trend_key:
+            return 180 * 24 * 3600  # 6个月
+        elif "weekly" in trend_key:
+            return 84 * 24 * 3600   # 12周
+        elif "daily" in trend_key:
+            return 30 * 24 * 3600    # 30天
+        elif "hourly" in trend_key:
+            return 7 * 24 * 3600     # 7天
+        else:  # daily
+            return 30 * 24 * 3600   # 30天
+    
+    def _update_hourly_stats(self, trend_key, user_id, group_id, current_time):
+        """更新小时统计的特殊数据"""
+        pipe = self.redis.pipeline()
+        
+        # 记录请求计数
+        pipe.hincrby(trend_key, "request_count", 1)
+        
+        # 记录当前时间戳
+        pipe.hset(trend_key, "last_request_time", current_time.timestamp())
+        
+        # 更新活跃用户集
+        active_users_key = f"{trend_key}:active_users"
+        pipe.sadd(active_users_key, user_id)
+        pipe.expire(active_users_key, 7 * 24 * 3600)
+        
+        # 如果有群组，更新活跃群组集
+        if group_id:
+            active_groups_key = f"{trend_key}:active_groups"
+            pipe.sadd(active_groups_key, group_id)
+            pipe.expire(active_groups_key, 7 * 24 * 3600)
+        
+        pipe.execute()
+    
+    def _update_peak_stats(self, trend_key, current_time):
+        """更新峰值请求数"""
+        # 单独获取当前总请求数和峰值，不使用Pipeline
+        current_total = self.redis.hget(trend_key, "total_requests")
+        current_peak = self.redis.hget(trend_key, "peak_requests")
+        
+        # 转换为整数进行比较
+        current_total_int = int(current_total) if current_total else 0
+        current_peak_int = int(current_peak) if current_peak else 0
+        
+        # 如果当前总请求数大于峰值，更新峰值
+        if current_total_int > current_peak_int:
+            peak_pipe = self.redis.pipeline()
+            peak_pipe.hset(trend_key, "peak_requests", current_total_int)
+            peak_pipe.hset(trend_key, "peak_time", current_time.timestamp())
+            peak_pipe.execute()
 
     def _should_skip_message(self, message_str):
         """检查消息是否应该忽略处理"""
@@ -1876,11 +1946,6 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             self._log_error("分析趋势数据失败: {}", str(e))
             return "趋势分析失败，请稍后重试"
-        
-        # 更新群组统计（如果有）
-        if "group_stats" in keys_to_update:
-            self.redis.hincrby(keys_to_update["group_stats"], "total_usage", 1)
-            self.redis.hincrby(keys_to_update["group_user_stats"], "usage_count", 1)
 
     def _set_expiry_for_stats_keys(self, keys_to_update):
         """为统计键设置过期时间"""
@@ -2427,7 +2492,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.8.1 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.8.2 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -2491,7 +2556,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.8.1 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.8.2 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -2777,8 +2842,8 @@ class DailyLimitPlugin(star.Star):
             hours_until_reset = seconds_until_reset // 3600
             minutes_until_reset = (seconds_until_reset % 3600) // 60
             
-            status_msg = f"🕐 当前重置时间配置\n"
-            status_msg += f"═══════════════════\n\n"
+            status_msg = "🕐 当前重置时间配置\n"
+            status_msg += "═══════════════════\n\n"
             status_msg += f"• 当前重置时间：{current_reset_time}\n"
             status_msg += f"• 下次重置时间：{next_reset_time}\n"
             status_msg += f"• 距离下次重置：{hours_until_reset}小时{minutes_until_reset}分钟\n"
@@ -2988,13 +3053,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.8.1 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.8.2 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.8.1 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.8.2 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -3168,7 +3233,7 @@ class DailyLimitPlugin(star.Star):
             status_msg += f"• 累计异常检测：{total_abuse_detections} 次\n"
             
             # 配置信息
-            status_msg += f"\n📊 检测阈值配置：\n"
+            status_msg += "\n📊 检测阈值配置：\n"
             status_msg += f"• 快速请求：{self.rapid_request_threshold}次/{self.rapid_request_window}秒\n"
             status_msg += f"• 连续请求：{self.consecutive_request_threshold}次/{self.consecutive_request_window}秒\n"
             status_msg += f"• 自动限制时长：{self.auto_block_duration}秒\n"
@@ -3239,10 +3304,10 @@ class DailyLimitPlugin(star.Star):
                 template_preview += "..."
             config_msg += f"• 限制通知模板：{template_preview}\n"
             
-            config_msg += f"\n💡 配置说明：\n"
-            config_msg += f"• 快速请求：检测短时间内的大量请求\n"
-            config_msg += f"• 连续请求：检测连续不间断的请求\n"
-            config_msg += f"• 自动限制：检测到异常后自动限制用户\n"
+            config_msg += "\n💡 配置说明：\n"
+            config_msg += "• 快速请求：检测短时间内的大量请求\n"
+            config_msg += "• 连续请求：检测连续不间断的请求\n"
+            config_msg += "• 自动限制：检测到异常后自动限制用户\n"
             
             event.set_result(MessageEventResult().message(config_msg))
             
@@ -3316,12 +3381,12 @@ class DailyLimitPlugin(star.Star):
                 minutes = int(remaining_time // 60)
                 seconds = int(remaining_time % 60)
                 
-                stats_msg += f"🚫 当前状态：被限制\n"
+                stats_msg += "🚫 当前状态：被限制\n"
                 stats_msg += f"• 限制原因：{block_info['reason']}\n"
                 stats_msg += f"• 剩余限制时间：{minutes}分{seconds}秒\n"
                 stats_msg += f"• 限制开始时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block_info['blocked_at']))}\n\n"
             else:
-                stats_msg += f"✅ 当前状态：正常\n\n"
+                stats_msg += "✅ 当前状态：正常\n\n"
             
             # 异常记录统计
             if user_id in self.abuse_records:
@@ -3331,7 +3396,7 @@ class DailyLimitPlugin(star.Star):
                 # 最近1小时内的记录
                 recent_records = [t for t in records if t > current_time - 3600]
                 
-                stats_msg += f"📈 最近1小时请求统计：\n"
+                stats_msg += "📈 最近1小时请求统计：\n"
                 stats_msg += f"• 总请求次数：{len(recent_records)} 次\n"
                 
                 if recent_records:
@@ -3348,12 +3413,12 @@ class DailyLimitPlugin(star.Star):
                 # 异常检测统计
                 if user_id in self.abuse_stats:
                     user_stats = self.abuse_stats[user_id]
-                    stats_msg += f"\n⚠️ 异常检测统计：\n"
+                    stats_msg += "\n⚠️ 异常检测统计：\n"
                     stats_msg += f"• 连续请求计数：{user_stats['consecutive_count']} 次\n"
                     stats_msg += f"• 最后请求时间：{time.strftime('%H:%M:%S', time.localtime(user_stats['last_request_time']))}\n"
                 
             else:
-                stats_msg += f"📊 该用户暂无异常行为记录\n"
+                stats_msg += "📊 该用户暂无异常行为记录\n"
             
             event.set_result(MessageEventResult().message(stats_msg))
             
@@ -3756,12 +3821,12 @@ class DailyLimitPlugin(star.Star):
             
             # 全局统计
             if total_requests:
-                analytics_msg += f"🌍 全局统计：\n"
+                analytics_msg += "🌍 全局统计：\n"
                 analytics_msg += f"• 总调用次数: {int(total_requests)}次\n"
             
             # 用户统计
             if user_keys:
-                analytics_msg += f"\n👤 用户统计：\n"
+                analytics_msg += "\n👤 用户统计：\n"
                 analytics_msg += f"• 活跃用户数: {len(user_keys)}人\n"
                 
                 # 计算用户平均使用次数
@@ -3782,7 +3847,7 @@ class DailyLimitPlugin(star.Star):
             
             # 群组统计
             if group_keys:
-                analytics_msg += f"\n👥 群组统计：\n"
+                analytics_msg += "\n👥 群组统计：\n"
                 analytics_msg += f"• 活跃群组数: {len(group_keys)}个\n"
                 
                 # 计算群组平均使用次数
@@ -3803,7 +3868,7 @@ class DailyLimitPlugin(star.Star):
             
             # 使用分布分析
             if user_keys:
-                analytics_msg += f"\n📊 使用分布：\n"
+                analytics_msg += "\n📊 使用分布：\n"
                 
                 # 统计不同使用频次的用户数量
                 usage_levels = {"低(1-5次)": 0, "中(6-20次)": 0, "高(21+次)": 0}
@@ -4438,7 +4503,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.8.1")
+            current_version = self.config.get("version", "v2.8.2")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -4576,17 +4641,18 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.8.1")
+            current_version = self.config.get("version", "v2.8.2")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
                     update_content = self.last_checked_version_info.get("content", "暂无更新说明") if hasattr(self, 'last_checked_version_info') else "暂无更新说明"
                     event.set_result(MessageEventResult().message(
-                        f"AstrBot-日限制插件 Limit\n\n🎉 检测到新版本可用！\n"
+                        f"AstrBot-每日限制插件 DailyLimit\n\n🎉 检测到新版本可用！\n"
                         f"📦 当前版本：{current_version}\n"
                         f"🆕 最新版本：{self.last_checked_version}\n"
                         f"📝 更新内容：{update_content}\n"
                         f"🔗 下载地址：https://github.com/left666/astrbot_plugin_daily_limit"
+                        f"\nCiallo～(∠・ω< )⌒★"
                     ))
                 else:
                     # 已是最新版本
@@ -4607,14 +4673,14 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.8.1")
+            current_version = self.config.get("version", "v2.8.2")
             
             # 构建版本信息消息
-            version_msg = f"📦 日调用限制插件版本信息\n"
-            version_msg += f"══════════════\n\n"
+            version_msg = "📦 日调用限制插件版本信息\n"
+            version_msg += "══════════════\n\n"
             version_msg += f"• 当前版本：{current_version}\n"
-            version_msg += f"• 作者：left666\n"
-            version_msg += f"• 改进：Sakura520222\n\n"
+            version_msg += "• 作者：left666\n"
+            version_msg += "• 改进：Sakura520222\n\n"
             
             # 添加版本检查状态
             if not self.config["version_check"].get("enabled", True):
@@ -4627,11 +4693,11 @@ class DailyLimitPlugin(star.Star):
                     if self._compare_versions(self.last_checked_version, current_version) > 0:
                         version_msg += f"🆕 检测到新版本：{self.last_checked_version}\n"
                     else:
-                        version_msg += f"✅ 当前已是最新版本\n"
+                        version_msg += "✅ 当前已是最新版本\n"
                 else:
-                    version_msg += f"⏳ 尚未进行版本检查\n"
+                    version_msg += "⏳ 尚未进行版本检查\n"
             
-            version_msg += f"\n💡 使用 /limit checkupdate 手动检查更新"
+            version_msg += "\n💡 使用 /limit checkupdate 手动检查更新"
             
             event.set_result(MessageEventResult().message(version_msg))
             
@@ -4651,7 +4717,7 @@ class DailyLimitPlugin(star.Star):
 ░░░░░░░░░░   ░░░░░   ░░░░░ ░░░░░ ░░░░░░░░░░░    ░░░░░       ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░    ░░░░░    
                                                                                                                 
                                                                                                                                                                                                       
-                                       每日调用限制插件 v2.8.1                       
+                                       每日调用限制插件 v2.8.2                       
                                   作者: left666 & Sakura520222                  
     """
 

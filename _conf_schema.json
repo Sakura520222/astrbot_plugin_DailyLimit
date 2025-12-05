@@ -196,7 +196,7 @@
             "notification_message": {
                 "description": "新版本通知消息模板",
                 "type": "text",
-                "default": "AstrBot-日限制插件 Limit\n\n🚀 检测到新版本可用！\n📦 当前版本：{current_version}\n🆕 最新版本：{new_version}\n📝 更新内容：{update_content}\n🔗 下载地址：{download_url}",
+                "default": "AstrBot-每日限制插件 DailyLimit\n\n🚀 检测到新版本可用！\n📦 当前版本：{current_version}\n🆕 最新版本：{new_version}\n📝 更新内容：{update_content}\n🔗 下载地址：{download_url}\n\nCiallo～(∠・ω< )⌒★",
                 "hint": "支持变量：{current_version}（当前版本）、{new_version}（最新版本）、{update_content}（更新内容）、{download_url}（下载地址）"
             }
         }

@@ -19,9 +19,7 @@ import random
 import time
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from flask_cors import CORS
-import redis
 import os
-import signal
 from typing import Dict, List, Optional, Any
 
 class TrendDataStorage:
@@ -179,6 +177,44 @@ class TrendDataStorage:
         # 如果没有历史数据，返回空列表（前端会处理）
         return []
     
+    def _extract_date_from_filename(self, filename: str) -> Optional[datetime.datetime]:
+        """
+        从文件名中提取日期
+        
+        参数：
+            filename: 文件名
+            
+        返回：
+            datetime.datetime: 提取的日期对象，失败则返回None
+        """
+        if not filename.endswith('.json'):
+            return None
+        
+        # 移除.json扩展名
+        date_str = filename[:-5]
+        
+        # 处理带后缀的文件名（如：2025-11-22_trend_data_recent -> 2025-11-22）
+        if '_' in date_str:
+            date_str = date_str.split('_')[0]  # 取第一部分作为日期
+        
+        try:
+            return datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return None
+    
+    def _should_delete_file(self, file_date: datetime.datetime, cutoff_date: datetime.datetime) -> bool:
+        """
+        判断文件是否应该被删除
+        
+        参数：
+            file_date: 文件日期
+            cutoff_date: 截止日期
+            
+        返回：
+            bool: 是否应该删除
+        """
+        return file_date < cutoff_date
+    
     def cleanup_old_data(self, max_days: Optional[int] = None) -> int:
         """
         清理过旧数据
@@ -202,26 +238,17 @@ class TrendDataStorage:
                     return 0
                 
                 for filename in os.listdir(self.storage_dir):
-                    if filename.endswith('.json'):
-                        file_path = os.path.join(self.storage_dir, filename)
-                        
-                        # 尝试从文件名提取日期 - 支持带后缀的文件名
-                        date_str = filename[:-5]  # 移除.json扩展名
-                        # 处理带后缀的文件名（如：2025-11-22_trend_data_recent -> 2025-11-22）
-                        if '_' in date_str:
-                            date_str = date_str.split('_')[0]  # 取第一部分作为日期
-                            
-                        try:
-                            file_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-                            
-                            # 如果文件日期早于截止日期，删除文件
-                            if file_date < cutoff_date:
-                                os.remove(file_path)
-                                cleaned_count += 1
-                                
-                        except ValueError:
-                            # 文件名格式不正确，跳过
-                            continue
+                    file_path = os.path.join(self.storage_dir, filename)
+                    
+                    # 从文件名提取日期
+                    file_date = self._extract_date_from_filename(filename)
+                    if file_date is None:
+                        continue
+                    
+                    # 判断是否应该删除
+                    if self._should_delete_file(file_date, cutoff_date):
+                        os.remove(file_path)
+                        cleaned_count += 1
                             
             except Exception as e:
                 print(f"清理过旧趋势数据失败: {e}")
@@ -278,7 +305,7 @@ class TrendDataStorage:
             if os.path.exists(temp_file):
                 try:
                     os.remove(temp_file)
-                except:
+                except Exception:
                     pass
             return False
 
@@ -426,7 +453,7 @@ class WebServer:
                     self.plugin.config.save_config()
                     print(f"已保存新端口 {port} 到配置文件")
                 else:
-                    print(f"警告: 无法保存端口到配置文件，配置对象缺少save_config方法")
+                    print("警告: 无法保存端口到配置文件，配置对象缺少save_config方法")
         except Exception as e:
             print(f"保存端口到配置时出错: {e}")
     
@@ -609,39 +636,58 @@ class WebServer:
         """
         获取使用统计信息
         
-        从Redis中获取活跃用户数、活跃群组数和总请求数等关键统计指标。
+        从Redis中获取活跃用户数、活跃群组数和总请求数等关键统计指标，
+        包括平均请求数、峰值请求数、峰值小时等扩展指标。
         
         返回：
-            dict: 包含统计信息的字典，格式为：
-                {
-                    'active_users': int,  # 活跃用户数
-                    'active_groups': int, # 活跃群组数  
-                    'total_requests': int # 总请求数
-                }
+            dict: 包含统计信息的字典
         """
         if not self.plugin.redis:
             return {}
         
         # 使用与主插件相同的日期计算逻辑
         today = self.plugin._get_reset_period_date()
-        
         stats = self._initialize_stats_dict(today)
         
-        # 获取活跃用户数
-        user_keys = self._get_user_keys_for_date(today)
-        stats['active_users'] = len(user_keys)
+        # 获取活跃用户数和总请求数
+        self._update_active_users_stats(stats, today)
         
         # 获取活跃群组数
-        group_keys = self._get_group_keys_for_date(today)
-        stats['active_groups'] = len(group_keys)
+        self._update_active_groups_stats(stats, today)
         
-        # 计算总请求数
-        stats['total_requests'] = self._calculate_total_requests(user_keys)
+        # 获取峰值小时数据
+        self._update_peak_hour_stats(stats)
         
         # 保存每日统计数据到本地存储
         self._save_daily_stats(stats)
         
         return stats
+    
+    def _update_active_users_stats(self, stats, today):
+        """更新活跃用户统计信息"""
+        user_keys = self._get_user_keys_for_date(today)
+        stats['active_users'] = len(user_keys)
+        
+        # 计算总请求数和平均请求数
+        total_requests = self._calculate_total_requests(user_keys)
+        stats['total_requests'] = total_requests
+        
+        if stats['active_users'] > 0:
+            stats['avg_requests_per_user'] = round(total_requests / stats['active_users'], 2)
+        else:
+            stats['avg_requests_per_user'] = 0
+    
+    def _update_active_groups_stats(self, stats, today):
+        """更新活跃群组统计信息"""
+        group_keys = self._get_group_keys_for_date(today)
+        stats['active_groups'] = len(group_keys)
+    
+    def _update_peak_hour_stats(self, stats):
+        """更新峰值小时统计信息"""
+        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        peak_hour_data = self._get_today_peak_hour(today_date)
+        stats['peak_hour_requests'] = peak_hour_data['peak_requests']
+        stats['peak_hour'] = peak_hour_data['peak_hour']
     
     def _save_daily_stats(self, stats):
         """
@@ -676,7 +722,49 @@ class WebServer:
             'total_requests': 0,
             'active_users': 0,
             'active_groups': 0,
-            'date': date_str
+            'date': date_str,
+            'avg_requests_per_user': 0,
+            'peak_hour_requests': 0,
+            'peak_hour': '',
+            'total_users': 0,
+            'total_groups': 0
+        }
+    
+    def _get_today_peak_hour(self, today_date):
+        """
+        获取今日的峰值小时数据
+        
+        参数：
+            today_date (str): 今日日期，格式为YYYY-MM-DD
+            
+        返回：
+            dict: 包含峰值请求数和峰值小时的字典
+        """
+        peak_requests = 0
+        peak_hour = ""
+        
+        try:
+            # 遍历今日所有小时（00-23）
+            for hour in range(24):
+                hour_str = f"{hour:02d}"
+                hour_key = f"astrbot:trend_stats:hourly:{today_date}-{hour_str}"
+                
+                # 获取该小时的请求数
+                request_count = self.plugin.redis.hget(hour_key, "total_requests")
+                if request_count:
+                    request_count = int(request_count)
+                    if request_count > peak_requests:
+                        peak_requests = request_count
+                        peak_hour = hour_str
+        except Exception as e:
+            if self.plugin:
+                self.plugin._log_error("获取峰值小时数据失败: {}", str(e))
+            else:
+                print(f"获取峰值小时数据失败: {e}")
+        
+        return {
+            'peak_requests': peak_requests,
+            'peak_hour': peak_hour
         }
 
     def _get_user_keys_for_date(self, date_str):
@@ -715,6 +803,139 @@ class WebServer:
             'redis_config': config['redis']
         }
     
+    def _validate_config_data(self, config_data):
+        """
+        验证配置数据格式
+        
+        参数：
+            config_data (dict): 配置数据
+            
+        异常：
+            ValueError: 配置数据格式错误时抛出
+        """
+        if not isinstance(config_data, dict):
+            raise ValueError("配置数据格式错误")
+    
+    def _update_default_daily_limit(self, config_data):
+        """
+        更新默认每日限制
+        
+        参数：
+            config_data (dict): 配置数据
+            
+        异常：
+            ValueError: 配置值无效时抛出
+        """
+        if 'default_daily_limit' in config_data:
+            new_limit = config_data['default_daily_limit']
+            if isinstance(new_limit, int) and new_limit > 0:
+                self.plugin.config['limits']['default_daily_limit'] = new_limit
+            else:
+                raise ValueError("默认每日限制必须是大于0的整数")
+    
+    def _update_user_list(self, config_data, list_name, config_key):
+        """
+        更新用户列表（豁免用户或优先级用户）
+        
+        参数：
+            config_data (dict): 配置数据
+            list_name (str): 配置数据中的列表名称
+            config_key (str): 配置文件中的键名
+            
+        异常：
+            ValueError: 配置值无效时抛出
+        """
+        if list_name in config_data:
+            user_list = config_data[list_name]
+            if isinstance(user_list, list):
+                # 验证并清理每个用户ID
+                valid_users = []
+                for user_id in user_list:
+                    if isinstance(user_id, str) and user_id.strip():
+                        valid_users.append(user_id.strip())
+                self.plugin.config['limits'][config_key] = valid_users
+            else:
+                raise ValueError(f"{list_name}必须是字符串列表")
+    
+    def _update_string_config(self, config_data, config_key):
+        """
+        更新字符串类型的配置
+        
+        参数：
+            config_data (dict): 配置数据
+            config_key (str): 配置键名
+            
+        异常：
+            ValueError: 配置值无效时抛出
+        """
+        if config_key in config_data:
+            value = config_data[config_key]
+            if isinstance(value, str):
+                self.plugin.config['limits'][config_key] = value
+            else:
+                raise ValueError(f"{config_key}必须是字符串格式")
+    
+    def _update_custom_messages(self, config_data):
+        """
+        更新自定义消息
+        
+        参数：
+            config_data (dict): 配置数据
+            
+        异常：
+            ValueError: 配置值无效时抛出
+        """
+        if 'custom_messages' in config_data:
+            custom_messages = config_data['custom_messages']
+            if isinstance(custom_messages, dict):
+                # 合并自定义消息，保留原有配置
+                current_messages = self.plugin.config['limits'].get('custom_messages', {})
+                current_messages.update(custom_messages)
+                self.plugin.config['limits']['custom_messages'] = current_messages
+            else:
+                raise ValueError("自定义消息必须是字典格式")
+    
+    def _update_redis_config(self, config_data):
+        """
+        更新Redis配置
+        
+        参数：
+            config_data (dict): 配置数据
+            
+        异常：
+            ValueError: 配置值无效时抛出
+        """
+        if 'redis_config' in config_data:
+            redis_config = config_data['redis_config']
+            if isinstance(redis_config, dict):
+                # 验证Redis配置字段
+                required_fields = ['host', 'port', 'db', 'password']
+                for field in required_fields:
+                    if field not in redis_config:
+                        raise ValueError(f"Redis配置缺少必要字段: {field}")
+                
+                # 更新Redis配置
+                self.plugin.config['redis'] = redis_config
+                
+                # 重新初始化Redis连接
+                self.plugin._init_redis()
+            else:
+                raise ValueError("Redis配置必须是字典格式")
+    
+    def _finalize_config_update(self):
+        """
+        完成配置更新的最终操作
+        """
+        # 保存配置到文件
+        self.plugin.config.save_config()
+        
+        # 重新加载插件配置
+        self.plugin._load_limits_from_config()
+        
+        # 记录配置更新日志
+        if self.plugin:
+            self.plugin._log_info("通过Web界面更新配置成功")
+    
     def _update_config(self, config_data):
         """
         更新配置数据
@@ -727,121 +948,14 @@ class WebServer:
         """
         try:
             # 验证配置数据
-            if not isinstance(config_data, dict):
-                raise ValueError("配置数据格式错误")
+            self._validate_config_data(config_data)
             
-            # 更新默认每日限制
-            if 'default_daily_limit' in config_data:
-                new_limit = config_data['default_daily_limit']
-                if isinstance(new_limit, int) and new_limit > 0:
-                    self.plugin.config['limits']['default_daily_limit'] = new_limit
-                else:
-                    raise ValueError("默认每日限制必须是大于0的整数")
+            # 更新各项配置
+            self._update_limits_config(config_data)
+            self._update_redis_config(config_data)
             
-            # 更新豁免用户列表
-            if 'exempt_users' in config_data:
-                exempt_users = config_data['exempt_users']
-                if isinstance(exempt_users, list):
-                    # 验证每个用户ID都是字符串
-                    valid_users = []
-                    for user_id in exempt_users:
-                        if isinstance(user_id, str) and user_id.strip():
-                            valid_users.append(user_id.strip())
-                    self.plugin.config['limits']['exempt_users'] = valid_users
-                else:
-                    raise ValueError("豁免用户列表必须是字符串列表")
-            
-            # 更新优先级用户列表
-            if 'priority_users' in config_data:
-                priority_users = config_data['priority_users']
-                if isinstance(priority_users, list):
-                    # 验证每个用户ID都是字符串
-                    valid_users = []
-                    for user_id in priority_users:
-                        if isinstance(user_id, str) and user_id.strip():
-                            valid_users.append(user_id.strip())
-                    self.plugin.config['limits']['priority_users'] = valid_users
-                else:
-                    raise ValueError("优先级用户列表必须是字符串列表")
-            
-            # 更新群组限制
-            if 'group_limits' in config_data:
-                group_limits = config_data['group_limits']
-                if isinstance(group_limits, str):
-                    self.plugin.config['limits']['group_limits'] = group_limits
-                else:
-                    raise ValueError("群组限制必须是字符串格式")
-            
-            # 更新用户限制
-            if 'user_limits' in config_data:
-                user_limits = config_data['user_limits']
-                if isinstance(user_limits, str):
-                    self.plugin.config['limits']['user_limits'] = user_limits
-                else:
-                    raise ValueError("用户限制必须是字符串格式")
-            
-            # 更新群组模式设置
-            if 'group_mode_settings' in config_data:
-                group_mode_settings = config_data['group_mode_settings']
-                if isinstance(group_mode_settings, str):
-                    self.plugin.config['limits']['group_mode_settings'] = group_mode_settings
-                else:
-                    raise ValueError("群组模式设置必须是字符串格式")
-            
-            # 更新时间段限制
-            if 'time_period_limits' in config_data:
-                time_period_limits = config_data['time_period_limits']
-                if isinstance(time_period_limits, str):
-                    self.plugin.config['limits']['time_period_limits'] = time_period_limits
-                else:
-                    raise ValueError("时间段限制必须是字符串格式")
-            
-            # 更新忽略模式
-            if 'skip_patterns' in config_data:
-                skip_patterns = config_data['skip_patterns']
-                if isinstance(skip_patterns, str):
-                    self.plugin.config['limits']['skip_patterns'] = skip_patterns
-                else:
-                    raise ValueError("忽略模式必须是字符串格式")
-            
-            # 更新自定义消息
-            if 'custom_messages' in config_data:
-                custom_messages = config_data['custom_messages']
-                if isinstance(custom_messages, dict):
-                    # 合并自定义消息，保留原有配置
-                    current_messages = self.plugin.config['limits'].get('custom_messages', {})
-                    current_messages.update(custom_messages)
-                    self.plugin.config['limits']['custom_messages'] = current_messages
-                else:
-                    raise ValueError("自定义消息必须是字典格式")
-            
-            # 更新Redis配置
-            if 'redis_config' in config_data:
-                redis_config = config_data['redis_config']
-                if isinstance(redis_config, dict):
-                    # 验证Redis配置字段
-                    required_fields = ['host', 'port', 'db', 'password']
-                    for field in required_fields:
-                        if field not in redis_config:
-                            raise ValueError(f"Redis配置缺少必要字段: {field}")
-                    
-                    # 更新Redis配置
-                    self.plugin.config['redis'] = redis_config
-                    
-                    # 重新初始化Redis连接
-                    self.plugin._init_redis()
-                else:
-                    raise ValueError("Redis配置必须是字典格式")
-            
-            # 保存配置到文件
-            self.plugin.config.save_config()
-            
-            # 重新加载插件配置
-            self.plugin._load_limits_from_config()
-            
-            # 记录配置更新日志
-            if self.plugin:
-                self.plugin._log_info("通过Web界面更新配置成功")
+            # 完成配置更新
+            self._finalize_config_update()
             
             # 返回更新后的配置数据
             return self._get_config_data()
@@ -855,6 +969,31 @@ class WebServer:
             
             # 重新抛出异常，让调用者处理
             raise
+    
+    def _update_limits_config(self, config_data):
+        """
+        更新限制相关配置
+        
+        参数：
+            config_data (dict): 新的配置数据
+        """
+        # 更新默认每日限制
+        self._update_default_daily_limit(config_data)
+        
+        # 更新用户列表
+        self._update_user_list(config_data, 'exempt_users', 'exempt_users')
+        self._update_user_list(config_data, 'priority_users', 'priority_users')
+        
+        # 更新字符串类型的配置
+        string_configs = [
+            'group_limits', 'user_limits', 'group_mode_settings',
+            'time_period_limits', 'skip_patterns'
+        ]
+        for config_key in string_configs:
+            self._update_string_config(config_data, config_key)
+        
+        # 更新自定义消息
+        self._update_custom_messages(config_data)
     
     def _get_users_data(self):
         """
@@ -978,6 +1117,70 @@ class WebServer:
         }
         return period_days_map.get(period, 28)  # 默认最近4周
 
+    def _get_data_point_from_historical(self, date, date_str):
+        """
+        从历史数据获取数据点
+        
+        参数：
+            date: 日期对象
+            date_str: 日期字符串
+            
+        返回：
+            dict: 数据点字典，失败返回None
+        """
+        historical_data = self.trend_storage.load_daily_stats(date)
+        if historical_data:
+            return {
+                'date': date_str,
+                'total_requests': historical_data.get('total_requests', 0),
+                'active_users': historical_data.get('active_users', 0),
+                'active_groups': historical_data.get('active_groups', 0),
+                'source': 'historical'
+            }
+        return None
+    
+    def _get_data_point_from_redis(self, date, date_str):
+        """
+        从Redis获取数据点
+        
+        参数：
+            date: 日期对象
+            date_str: 日期字符串
+            
+        返回：
+            dict: 数据点字典，失败返回None
+        """
+        if self.plugin and self.plugin.redis:
+            stats = self._get_daily_stats_from_redis(date_str)
+            # 保存到本地存储以供将来使用
+            self.trend_storage.save_daily_stats(date, stats)
+            return {
+                'date': date_str,
+                'total_requests': stats['total_requests'],
+                'active_users': stats['active_users'],
+                'active_groups': stats['active_groups'],
+                'source': 'redis'
+            }
+        return None
+    
+    def _get_default_data_point(self, date_str):
+        """
+        获取默认数据点
+        
+        参数：
+            date_str: 日期字符串
+            
+        返回：
+            dict: 默认数据点字典
+        """
+        return {
+            'date': date_str,
+            'total_requests': 0,
+            'active_users': 0,
+            'active_groups': 0,
+            'source': 'default'
+        }
+    
     def _generate_trends_data_points(self, days):
         """
         生成趋势数据点（整合历史数据存储）
@@ -994,46 +1197,22 @@ class WebServer:
         for i in range(days):
             # 计算日期
             date = today - datetime.timedelta(days=i)
-            
-            # 使用主插件的日期计算逻辑，确保与主插件一致
-            # 先获取日期字符串，考虑自定义重置时间
             date_str = self._get_reset_period_date_for_date(date)
             
-            # 尝试从本地存储获取历史数据
-            historical_data = self.trend_storage.load_daily_stats(date)
+            # 优先从历史数据获取
+            data_point = self._get_data_point_from_historical(date, date_str)
+            if data_point:
+                trends_data.append(data_point)
+                continue
             
-            if historical_data:
-                # 使用本地存储的历史数据
-                trends_data.append({
-                    'date': date_str,
-                    'total_requests': historical_data.get('total_requests', 0),
-                    'active_users': historical_data.get('active_users', 0),
-                    'active_groups': historical_data.get('active_groups', 0),
-                    'source': 'historical'  # 标记数据来源
-                })
-            else:
-                # 如果没有历史数据，从Redis获取当前数据
-                if self.plugin and self.plugin.redis:
-                    stats = self._get_daily_stats_from_redis(date_str)
-                    trends_data.append({
-                        'date': date_str,
-                        'total_requests': stats['total_requests'],
-                        'active_users': stats['active_users'],
-                        'active_groups': stats['active_groups'],
-                        'source': 'redis'  # 标记数据来源
-                    })
-                    
-                    # 保存到本地存储以供将来使用
-                    self.trend_storage.save_daily_stats(date, stats)
-                else:
-                    # 如果没有Redis连接，使用默认数据
-                    trends_data.append({
-                        'date': date_str,
-                        'total_requests': 0,
-                        'active_users': 0,
-                        'active_groups': 0,
-                        'source': 'default'
-                    })
+            # 其次从Redis获取
+            data_point = self._get_data_point_from_redis(date, date_str)
+            if data_point:
+                trends_data.append(data_point)
+                continue
+            
+            # 最后使用默认数据
+            trends_data.append(self._get_default_data_point(date_str))
         
         # 按日期排序（从早到晚）
         trends_data.sort(key=lambda x: x['date'])
@@ -1072,6 +1251,46 @@ class WebServer:
             yesterday = date_obj - datetime.timedelta(days=1)
             return yesterday.strftime("%Y-%m-%d")
 
+    def _convert_historical_data(self, historical_trends):
+        """
+        转换历史数据格式以保持兼容性
+        
+        参数：
+            historical_trends (list): 历史趋势数据列表
+            
+        返回：
+            list: 转换后的数据列表
+        """
+        trends_data = []
+        for data in historical_trends:
+            trends_data.append({
+                'date': data.get('date', ''),
+                'total_requests': data.get('total_requests', 0),
+                'active_users': data.get('active_users', 0),
+                'active_groups': data.get('active_groups', 0),
+                'source': 'historical'
+            })
+        return trends_data
+    
+    def _merge_trends_data(self, trends_data, days):
+        """
+        合并趋势数据，确保数据点数量足够
+        
+        参数：
+            trends_data (list): 当前趋势数据列表
+            days (int): 需要的数据点数量
+            
+        返回：
+            list: 合并后的数据列表
+        """
+        if len(trends_data) < days:
+            missing_days = days - len(trends_data)
+            additional_data = self._generate_trends_data_points(missing_days)
+            trends_data.extend(additional_data)
+            # 按日期排序
+            trends_data.sort(key=lambda x: x['date'])
+        return trends_data
+    
     def _get_trends_data(self, period='week'):
         """
         获取趋势分析数据（使用历史数据存储）
@@ -1086,35 +1305,8 @@ class WebServer:
             # 根据周期确定分析天数
             days = self._get_period_days(period)
             
-            # 优先从本地存储获取历史趋势数据
-            historical_trends = self.trend_storage.get_trend_data(period)
-            
-            if historical_trends and len(historical_trends) > 0:
-                # 如果有历史数据，直接使用
-                # 转换数据格式以保持兼容性
-                trends_data = []
-                for data in historical_trends:
-                    trends_data.append({
-                        'date': data.get('date', ''),
-                        'total_requests': data.get('total_requests', 0),
-                        'active_users': data.get('active_users', 0),
-                        'active_groups': data.get('active_groups', 0),
-                        'source': 'historical'
-                    })
-                
-                # 如果历史数据不够，需要补充新数据
-                if len(trends_data) < days:
-                    missing_days = days - len(trends_data)
-                    additional_data = self._generate_trends_data_points(missing_days)
-                    
-                    # 合并数据
-                    trends_data.extend(additional_data)
-                    
-                    # 按日期排序
-                    trends_data.sort(key=lambda x: x['date'])
-            else:
-                # 如果没有历史数据，生成新的趋势数据
-                trends_data = self._generate_trends_data_points(days)
+            # 获取趋势数据
+            trends_data, has_historical_data = self._fetch_trends_data(period, days)
             
             # 计算统计指标
             stats_summary = self._calculate_trends_summary(trends_data)
@@ -1123,7 +1315,7 @@ class WebServer:
                 'period': period,
                 'days': days,
                 'data': trends_data,
-                'has_historical_data': len(historical_trends) > 0,
+                'has_historical_data': has_historical_data,
                 'summary': stats_summary
             }
             
@@ -1133,6 +1325,72 @@ class WebServer:
             else:
                 print(f"获取趋势分析数据失败: {e}")
             return {}
+    
+    def _fetch_trends_data(self, period, days):
+        """
+        获取趋势数据，优先使用历史存储，否则生成新数据
+        
+        参数：
+            period (str): 分析周期
+            days (int): 分析天数
+            
+        返回：
+            tuple: (趋势数据列表, 是否有历史数据)
+        """
+        # 优先从本地存储获取历史趋势数据
+        historical_trends = self.trend_storage.get_trend_data(period)
+        has_historical_data = len(historical_trends) > 0
+        
+        if has_historical_data:
+            # 转换历史数据格式
+            trends_data = self._convert_historical_data(historical_trends)
+            # 合并数据确保数量足够
+            trends_data = self._merge_trends_data(trends_data, days)
+        else:
+            # 生成新的趋势数据
+            trends_data = self._generate_trends_data_points(days)
+        
+        return trends_data, has_historical_data
+    
+    def _calculate_stats(self, data_list):
+        """
+        计算单个数据列表的统计指标
+        
+        参数：
+            data_list (list): 数据列表
+            
+        返回：
+            dict: 统计指标字典
+        """
+        if not data_list:
+            return {
+                'average': 0,
+                'peak': 0,
+                'min': 0,
+                'total': 0,
+                'growth_rate': 0
+            }
+        
+        average = sum(data_list) / len(data_list)
+        peak = max(data_list)
+        min_val = min(data_list)
+        total = sum(data_list)
+        
+        # 计算增长率
+        growth_rate = 0
+        if len(data_list) >= 2:
+            first_val = data_list[0]
+            last_val = data_list[-1]
+            if first_val > 0:
+                growth_rate = ((last_val - first_val) / first_val) * 100
+        
+        return {
+            'average': round(average, 2),
+            'peak': peak,
+            'min': min_val,
+            'total': total,
+            'growth_rate': round(growth_rate, 2)
+        }
     
     def _calculate_trends_summary(self, trends_data):
         """
@@ -1148,47 +1406,18 @@ class WebServer:
             return {}
         
         # 提取数据
-        total_requests = [item['total_requests'] for item in trends_data if 'total_requests' in item]
-        active_users = [item['active_users'] for item in trends_data if 'active_users' in item]
-        active_groups = [item['active_groups'] for item in trends_data if 'active_groups' in item]
+        def get_data(key):
+            return [item[key] for item in trends_data if key in item]
         
-        # 计算基本统计指标
-        def calculate_stats(data_list):
-            if not data_list:
-                return {
-                    'average': 0,
-                    'peak': 0,
-                    'min': 0,
-                    'total': 0,
-                    'growth_rate': 0
-                }
-            
-            average = sum(data_list) / len(data_list)
-            peak = max(data_list)
-            min_val = min(data_list)
-            total = sum(data_list)
-            
-            # 计算增长率（如果有足够数据）
-            growth_rate = 0
-            if len(data_list) >= 2:
-                first_val = data_list[0]
-                last_val = data_list[-1]
-                if first_val > 0:
-                    growth_rate = ((last_val - first_val) / first_val) * 100
-            
-            return {
-                'average': round(average, 2),
-                'peak': peak,
-                'min': min_val,
-                'total': total,
-                'growth_rate': round(growth_rate, 2)
-            }
+        total_requests = get_data('total_requests')
+        active_users = get_data('active_users')
+        active_groups = get_data('active_groups')
         
         # 计算各指标的统计数据
         return {
-            'total_requests': calculate_stats(total_requests),
-            'active_users': calculate_stats(active_users),
-            'active_groups': calculate_stats(active_groups),
+            'total_requests': self._calculate_stats(total_requests),
+            'active_users': self._calculate_stats(active_users),
+            'active_groups': self._calculate_stats(active_groups),
             'days_count': len(trends_data)
         }
 

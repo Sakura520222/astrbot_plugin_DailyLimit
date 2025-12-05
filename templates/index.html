@@ -64,13 +64,80 @@
         .sakura {
             position: absolute;
             top: -50px;
+            opacity: 0.7;
+            animation: fall linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+        
+        /* 樱花样式1 */
+        .sakura.style1 {
             width: 30px;
             height: 30px;
             background: radial-gradient(circle, #fff 30%, transparent 70%);
             border-radius: 50% 0 50% 50%;
-            opacity: 0.7;
-            animation: fall linear infinite;
-            z-index: 0;
+        }
+        
+        /* 樱花样式2 */
+        .sakura.style2 {
+            width: 25px;
+            height: 25px;
+            background: radial-gradient(circle, #ffeef2 30%, transparent 70%);
+            border-radius: 50% 50% 0 50%;
+        }
+        
+        /* 樱花样式3 */
+        .sakura.style3 {
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #fff5f7 30%, transparent 70%);
+            border-radius: 0 50% 50% 50%;
+        }
+        
+        /* 樱花样式4 */
+        .sakura.style4 {
+            width: 35px;
+            height: 35px;
+            background: radial-gradient(circle, #ffeff4 30%, transparent 70%);
+            border-radius: 50% 50% 50% 0;
+        }
+        
+        /* 添加左右摇摆效果 */
+        @keyframes sway {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(50px);
+            }
+        }
+        
+        /* 不同摇摆幅度的动画 */
+        @keyframes sway1 {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(30px);
+            }
+        }
+        
+        @keyframes sway2 {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(-30px);
+            }
+        }
+        
+        @keyframes sway3 {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            50% {
+                transform: translateX(-50px);
+            }
         }
         
         /* 添加页面加载动画样式 */
@@ -271,8 +338,28 @@
         /* 深色模式下的文本颜色 */
         body.dark-mode .stat-label,
         body.dark-mode .section-title,
-        body.dark-mode .status-label,
         body.dark-mode .form-group label {
+            color: var(--text-light);
+        }
+        
+        /* 深色模式下的状态概览卡片样式 */
+        body.dark-mode .status-item {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-alt) 100%);
+            border: 1px solid var(--border-dark);
+            box-shadow: var(--shadow-dark);
+        }
+        
+        body.dark-mode .status-item:hover {
+            background: linear-gradient(135deg, rgba(50, 50, 70, 0.9) 0%, rgba(60, 60, 80, 0.9) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+        }
+        
+        body.dark-mode .status-value {
+            color: #ff9eb5;
+        }
+        
+        body.dark-mode .status-label {
             color: var(--text-light);
         }
         
@@ -1036,6 +1123,8 @@
             background: rgba(60, 60, 80, 0.5);
             color: #ff9eb5;
         }
+
+
         
         /* 调整容器位置，避免被导航栏遮挡 */
         .container {
@@ -2355,24 +2444,32 @@
             
             const sakuraContainer = document.getElementById('sakuraContainer');
             const sakura = document.createElement('div');
-            sakura.className = 'sakura';
+            
+            // 随机选择樱花样式 (1-4)
+            const styleNumber = Math.floor(Math.random() * 4) + 1;
+            sakura.className = `sakura style${styleNumber}`;
             
             // 随机位置
             const left = Math.random() * 100;
             sakura.style.left = left + 'vw';
             
-            // 随机大小
-            const size = Math.random() * 20 + 10;
-            sakura.style.width = size + 'px';
-            sakura.style.height = size + 'px';
-            
-            // 随机动画时长
-            const duration = Math.random() * 10 + 5;
+            // 随机动画时长 (10-30秒)
+            const duration = Math.random() * 20 + 10;
             sakura.style.animationDuration = duration + 's';
             
-            // 随机透明度
-            const opacity = Math.random() * 0.5 + 0.3;
+            // 随机透明度 (0.3-0.9)
+            const opacity = Math.random() * 0.6 + 0.3;
             sakura.style.opacity = opacity;
+            
+            // 随机摇摆效果
+            const swayAnimations = ['sway1', 'sway2', 'sway3'];
+            const swayAnimation = swayAnimations[Math.floor(Math.random() * swayAnimations.length)];
+            sakura.style.animationName = `fall, ${swayAnimation}`;
+            sakura.style.animationDelay = `0s, ${Math.random() * 2}s`;
+            
+            // 随机摇摆幅度
+            const swayIntensity = Math.random() * 20 + 10;
+            sakura.style.transform = `translateX(${swayIntensity}px)`;
             
             // 添加到容器
             sakuraContainer.appendChild(sakura);
