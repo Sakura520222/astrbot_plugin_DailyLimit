@@ -1277,77 +1277,94 @@ class DailyLimitPlugin(star.Star):
         """更新趋势统计数据"""
         current_time = datetime.datetime.now()
         
-        # 第一阶段：执行所有写操作，更新各种统计数据
+        # 执行主要统计更新
+        self._update_trend_basic_stats(trend_key, user_id, group_id, usage_type, current_time)
+        
+        # 处理小时统计的特殊逻辑
+        if "hourly" in trend_key:
+            self._update_hourly_stats(trend_key, user_id, group_id, current_time)
+        
+        # 更新峰值请求数（非小时统计）
+        if "hourly" not in trend_key:
+            self._update_peak_stats(trend_key, current_time)
+    
+    def _update_trend_basic_stats(self, trend_key, user_id, group_id, usage_type, current_time):
+        """更新趋势基本统计数据"""
         pipe = self.redis.pipeline()
         
         # 更新总请求数
         pipe.hincrby(trend_key, "total_requests", 1)
         
         # 更新用户统计
-        user_stats_key = f"user:{user_id}"
-        pipe.hincrby(trend_key, user_stats_key, 1)
+        pipe.hincrby(trend_key, f"user:{user_id}", 1)
         
         # 更新群组统计（如果有群组）
         if group_id:
-            group_stats_key = f"group:{group_id}"
-            pipe.hincrby(trend_key, group_stats_key, 1)
+            pipe.hincrby(trend_key, f"group:{group_id}", 1)
         
         # 更新使用类型统计
-        usage_stats_key = f"usage_type:{usage_type}"
-        pipe.hincrby(trend_key, usage_stats_key, 1)
-        
-        # 如果是小时统计，记录更详细的指标
-        if "hourly" in trend_key:
-            # 记录请求计数
-            pipe.hincrby(trend_key, "request_count", 1)
-            
-            # 记录当前时间戳
-            pipe.hset(trend_key, "last_request_time", current_time.timestamp())
-            
-            # 更新活跃用户集
-            pipe.sadd(f"{trend_key}:active_users", user_id)
-            
-            # 如果有群组，更新活跃群组集
-            if group_id:
-                pipe.sadd(f"{trend_key}:active_groups", group_id)
+        pipe.hincrby(trend_key, f"usage_type:{usage_type}", 1)
         
         # 记录统计数据的更新时间
         pipe.hset(trend_key, "updated_at", current_time.timestamp())
         
-        # 设置过期时间（月数据保留6个月，周数据保留12周，日数据保留30天，小时数据保留7天）
-        if "monthly" in trend_key:
-            pipe.expire(trend_key, 180 * 24 * 3600)  # 6个月
-        elif "weekly" in trend_key:
-            pipe.expire(trend_key, 84 * 24 * 3600)   # 12周
-        elif "daily" in trend_key:
-            pipe.expire(trend_key, 30 * 24 * 3600)    # 30天
-        elif "hourly" in trend_key:
-            pipe.expire(trend_key, 7 * 24 * 3600)     # 7天
-            # 同时设置活跃用户和群组集合的过期时间
-            pipe.expire(f"{trend_key}:active_users", 7 * 24 * 3600)
-            pipe.expire(f"{trend_key}:active_groups", 7 * 24 * 3600)
-        else:  # daily
-            pipe.expire(trend_key, 30 * 24 * 3600)   # 30天
+        # 设置过期时间
+        pipe.expire(trend_key, self._get_trend_expiry_seconds(trend_key))
         
-        # 执行第一阶段的所有命令
         pipe.execute()
+    
+    def _get_trend_expiry_seconds(self, trend_key):
+        """获取趋势数据的过期时间（秒）"""
+        if "monthly" in trend_key:
+            return 180 * 24 * 3600  # 6个月
+        elif "weekly" in trend_key:
+            return 84 * 24 * 3600   # 12周
+        elif "daily" in trend_key:
+            return 30 * 24 * 3600    # 30天
+        elif "hourly" in trend_key:
+            return 7 * 24 * 3600     # 7天
+        else:  # daily
+            return 30 * 24 * 3600   # 30天
+    
+    def _update_hourly_stats(self, trend_key, user_id, group_id, current_time):
+        """更新小时统计的特殊数据"""
+        pipe = self.redis.pipeline()
         
-        # 第二阶段：检查并更新峰值请求数（仅对非小时统计）
-        if "hourly" not in trend_key:
-            # 单独获取当前总请求数和峰值，不使用Pipeline
-            current_total = self.redis.hget(trend_key, "total_requests")
-            current_peak = self.redis.hget(trend_key, "peak_requests")
-            
-            # 转换为整数进行比较
-            current_total_int = int(current_total) if current_total else 0
-            current_peak_int = int(current_peak) if current_peak else 0
-            
-            # 如果当前总请求数大于峰值，更新峰值
-            if current_total_int > current_peak_int:
-                peak_pipe = self.redis.pipeline()
-                peak_pipe.hset(trend_key, "peak_requests", current_total_int)
-                peak_pipe.hset(trend_key, "peak_time", current_time.timestamp())
-                peak_pipe.execute()
+        # 记录请求计数
+        pipe.hincrby(trend_key, "request_count", 1)
+        
+        # 记录当前时间戳
+        pipe.hset(trend_key, "last_request_time", current_time.timestamp())
+        
+        # 更新活跃用户集
+        active_users_key = f"{trend_key}:active_users"
+        pipe.sadd(active_users_key, user_id)
+        pipe.expire(active_users_key, 7 * 24 * 3600)
+        
+        # 如果有群组，更新活跃群组集
+        if group_id:
+            active_groups_key = f"{trend_key}:active_groups"
+            pipe.sadd(active_groups_key, group_id)
+            pipe.expire(active_groups_key, 7 * 24 * 3600)
+        
+        pipe.execute()
+    
+    def _update_peak_stats(self, trend_key, current_time):
+        """更新峰值请求数"""
+        # 单独获取当前总请求数和峰值，不使用Pipeline
+        current_total = self.redis.hget(trend_key, "total_requests")
+        current_peak = self.redis.hget(trend_key, "peak_requests")
+        
+        # 转换为整数进行比较
+        current_total_int = int(current_total) if current_total else 0
+        current_peak_int = int(current_peak) if current_peak else 0
+        
+        # 如果当前总请求数大于峰值，更新峰值
+        if current_total_int > current_peak_int:
+            peak_pipe = self.redis.pipeline()
+            peak_pipe.hset(trend_key, "peak_requests", current_total_int)
+            peak_pipe.hset(trend_key, "peak_time", current_time.timestamp())
+            peak_pipe.execute()
 
     def _should_skip_message(self, message_str):
         """检查消息是否应该忽略处理"""
@@ -1929,11 +1946,6 @@ class DailyLimitPlugin(star.Star):
         except Exception as e:
             self._log_error("分析趋势数据失败: {}", str(e))
             return "趋势分析失败，请稍后重试"
-        
-        # 更新群组统计（如果有）
-        if "group_stats" in keys_to_update:
-            self.redis.hincrby(keys_to_update["group_stats"], "total_usage", 1)
-            self.redis.hincrby(keys_to_update["group_user_stats"], "usage_count", 1)
 
     def _set_expiry_for_stats_keys(self, keys_to_update):
         """为统计键设置过期时间"""

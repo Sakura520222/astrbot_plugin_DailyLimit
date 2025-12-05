@@ -640,53 +640,54 @@ class WebServer:
         包括平均请求数、峰值请求数、峰值小时等扩展指标。
         
         返回：
-            dict: 包含统计信息的字典，格式为：
-                {
-                    'active_users': int,  # 活跃用户数
-                    'active_groups': int, # 活跃群组数  
-                    'total_requests': int, # 总请求数
-                    'avg_requests_per_user': float, # 平均每个用户请求数
-                    'peak_hour_requests': int, # 峰值小时请求数
-                    'peak_hour': str, # 峰值小时
-                    'total_users': int, # 总用户数
-                    'total_groups': int # 总群组数
-                }
+            dict: 包含统计信息的字典
         """
         if not self.plugin.redis:
             return {}
         
         # 使用与主插件相同的日期计算逻辑
         today = self.plugin._get_reset_period_date()
-        
         stats = self._initialize_stats_dict(today)
         
-        # 获取活跃用户数
-        user_keys = self._get_user_keys_for_date(today)
-        stats['active_users'] = len(user_keys)
+        # 获取活跃用户数和总请求数
+        self._update_active_users_stats(stats, today)
         
         # 获取活跃群组数
-        group_keys = self._get_group_keys_for_date(today)
-        stats['active_groups'] = len(group_keys)
+        self._update_active_groups_stats(stats, today)
         
-        # 计算总请求数
-        stats['total_requests'] = self._calculate_total_requests(user_keys)
-        
-        # 计算平均每个用户请求数
-        if stats['active_users'] > 0:
-            stats['avg_requests_per_user'] = round(stats['total_requests'] / stats['active_users'], 2)
-        else:
-            stats['avg_requests_per_user'] = 0
-        
-        # 获取今日所有小时的统计数据
-        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
-        peak_hour_data = self._get_today_peak_hour(today_date)
-        stats['peak_hour_requests'] = peak_hour_data['peak_requests']
-        stats['peak_hour'] = peak_hour_data['peak_hour']
+        # 获取峰值小时数据
+        self._update_peak_hour_stats(stats)
         
         # 保存每日统计数据到本地存储
         self._save_daily_stats(stats)
         
         return stats
+    
+    def _update_active_users_stats(self, stats, today):
+        """更新活跃用户统计信息"""
+        user_keys = self._get_user_keys_for_date(today)
+        stats['active_users'] = len(user_keys)
+        
+        # 计算总请求数和平均请求数
+        total_requests = self._calculate_total_requests(user_keys)
+        stats['total_requests'] = total_requests
+        
+        if stats['active_users'] > 0:
+            stats['avg_requests_per_user'] = round(total_requests / stats['active_users'], 2)
+        else:
+            stats['avg_requests_per_user'] = 0
+    
+    def _update_active_groups_stats(self, stats, today):
+        """更新活跃群组统计信息"""
+        group_keys = self._get_group_keys_for_date(today)
+        stats['active_groups'] = len(group_keys)
+    
+    def _update_peak_hour_stats(self, stats):
+        """更新峰值小时统计信息"""
+        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        peak_hour_data = self._get_today_peak_hour(today_date)
+        stats['peak_hour_requests'] = peak_hour_data['peak_requests']
+        stats['peak_hour'] = peak_hour_data['peak_hour']
     
     def _save_daily_stats(self, stats):
         """
