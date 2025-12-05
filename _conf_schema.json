@@ -4,22 +4,22 @@
         "type": "object",
         "items": {
             "host": {
-                "description": "主机地址",
+                "description": "Redis主机地址",
                 "type": "string",
                 "default": "localhost"
             },
             "port": {
-                "description": "端口",
+                "description": "Redis端口号",
                 "type": "int",
                 "default": 6379
             },
             "db": {
-                "description": "数据库",
+                "description": "Redis数据库索引",
                 "type": "int",
                 "default": 0
             },
             "password": {
-                "description": "密码",
+                "description": "Redis访问密码",
                 "type": "string",
                 "default": ""
             }
@@ -32,47 +32,56 @@
             "default_daily_limit": {
                 "description": "默认每日限制次数",
                 "type": "int",
-                "default": 20
+                "default": 20,
+                "group": "基础设置"
             },
             "exempt_users": {
                 "description": "豁免用户ID列表",
                 "type": "list",
-                "default": []
+                "default": [],
+                "group": "用户设置",
+                "hint": "这些用户不受每日限制次数限制"
             },
             "priority_users": {
                 "description": "优先级用户ID列表",
                 "type": "list",
                 "default": [],
+                "group": "用户设置",
                 "hint": "优先级用户在任何群聊中只受特定限制，不参与特定群聊限制"
             },
             "group_limits": {
                 "description": "特定群组限制",
                 "type": "text",
                 "default": "",
+                "group": "群组设置",
                 "hint": "格式为：群组ID:每日限制次数，一行一个（使用指令/sid查看ID）\n示例：\n123456:50\n789012:30\n345678:100"
             },
             "group_mode_settings": {
                 "description": "群组模式配置",
                 "type": "text",
                 "default": "",
+                "group": "群组设置",
                 "hint": "格式为：群组ID:模式(shared或individual)，一行一个\n示例：\n123456:shared\n789012:individual\n345678:shared"
             },
             "user_limits": {
                 "description": "特定用户限制",
                 "type": "text",
                 "default": "",
+                "group": "用户设置",
                 "hint": "格式为：用户ID:每日限制次数，一行一个\n示例：\n123456789:100\n987654321:50\n555666777:200"
             },
             "time_period_limits": {
                 "description": "时间段限制配置",
                 "type": "text",
                 "default": "",
+                "group": "时间段设置",
                 "hint": "格式为：开始时间-结束时间:限制次数:是否启用(true/false)，一行一个\n示例：\n09:00-12:00:10:true\n14:00-18:00:20:false\n20:00-23:00:15:true"
             },
             "skip_patterns": {
                 "description": "忽略处理的模式配置",
                 "type": "list",
                 "default": ["#", "*"],
+                "group": "基础设置",
                 "hint": "消息以这些格式开头时，将忽略它们（不会回复，不消耗次数）",
                 "items": {
                     "type": "string"
@@ -82,11 +91,13 @@
                 "description": "每日重置时间",
                 "type": "string",
                 "default": "00:00",
+                "group": "基础设置",
                 "hint": "设置每日重置时间，格式为HH:MM（24小时制），例如：00:00（午夜）、06:00（早上6点）、12:00（中午12点）。支持通过/limit resettime命令动态管理"
             },
             "custom_messages": {
                 "description": "自定义提醒消息配置",
                 "type": "object",
+                "group": "消息设置",
                 "items": {
                     "zero_usage_message": {
                         "description": "使用次数为0时的提醒消息",
@@ -152,12 +163,12 @@
             "port": {
                 "description": "Web服务器监听端口",
                 "type": "int",
-                "default": 8080
+                "default": 10245
             },
             "debug": {
                 "description": "是否启用调试模式",
                 "type": "bool",
-                "default": true
+                "default": false
             },
             "domain": {
                 "description": "自定义域名（用于生成访问链接）",
@@ -168,7 +179,7 @@
                 "description": "Web管理界面访问密码",
                 "type": "string",
                 "default": "limit",
-                "hint": "留空表示无需密码访问"
+                "hint": "留空表示无需密码访问，建议生产环境设置强密码"
             }
         }
     },
@@ -208,59 +219,69 @@
             "anti_abuse_enabled": {
                 "description": "是否启用防刷机制",
                 "type": "bool",
-                "default": false
+                "default": false,
+                "group": "防刷设置"
             },
             "rapid_request_threshold": {
                 "description": "快速请求阈值（次/秒）",
                 "type": "int",
                 "default": 10,
+                "group": "防刷设置",
                 "hint": "10秒内超过此数量的请求将被视为异常行为"
             },
             "rapid_request_window": {
                 "description": "快速请求检测时间窗口（秒）",
                 "type": "int",
                 "default": 10,
+                "group": "防刷设置",
                 "hint": "快速请求检测的时间窗口大小"
             },
             "consecutive_request_threshold": {
                 "description": "连续请求阈值（次）",
                 "type": "int",
                 "default": 5,
+                "group": "防刷设置",
                 "hint": "连续请求超过此数量将被视为异常行为"
             },
             "consecutive_request_window": {
                 "description": "连续请求检测时间窗口（秒）",
                 "type": "int",
                 "default": 30,
+                "group": "防刷设置",
                 "hint": "连续请求检测的时间窗口大小"
             },
             "auto_block_duration": {
                 "description": "自动限制时长（秒）",
                 "type": "int",
                 "default": 300,
+                "group": "限制设置",
                 "hint": "检测到异常行为后自动限制的时长"
             },
             "admin_notification_enabled": {
                 "description": "检测到异常行为时通知管理员",
                 "type": "bool",
-                "default": true
+                "default": true,
+                "group": "通知设置"
             },
             "admin_users": {
                 "description": "管理员用户ID列表（当前仅支持QQ）",
-                "type": "text",
-                "default": "",
-                "hint": "检测到异常行为时通知的管理员用户ID，一行一个（当前仅支持QQ）"
+                "type": "list",
+                "default": [],
+                "group": "通知设置",
+                "hint": "检测到异常行为时通知的管理员用户ID，使用指令/sid查看ID"
             },
             "block_notification_template": {
                 "description": "用户限制通知消息模板",
                 "type": "text",
                 "default": "检测到异常使用行为，您已被临时限制使用{auto_block_duration}秒",
+                "group": "通知设置",
                 "hint": "支持变量：{auto_block_duration}（限制时长）"
             },
             "notification_cooldown": {
                 "description": "通知冷却时间（秒）",
                 "type": "int",
                 "default": 300,
+                "group": "通知设置",
                 "hint": "同一用户重复触发限制时，在此时间内不会重复发送通知，避免骚扰"
             }
         }

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.8.2-blue)
+![Version](https://img.shields.io/badge/版本-v2.8.3-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -167,7 +167,7 @@ AstrBot 日调用限制插件是专为AstrBot设计的AI资源管理工具，通
   },
   "web_server": {
     "host": "127.0.0.1",
-    "port": 8080,
+    "port": 10245,
     "debug": true,
     "domain": "",
     "password": "limit"
@@ -277,7 +277,7 @@ Redis是插件的数据存储后端，必须正确配置才能正常运行。
 ```json
 "web_server": {
     "host": "127.0.0.1",
-    "port": 8080,
+    "port": 10245,
     "debug": true,
     "domain": "",
     "password": "limit"
@@ -285,7 +285,7 @@ Redis是插件的数据存储后端，必须正确配置才能正常运行。
 ```
 **配置说明：**
 - **host**: Web服务器绑定的主机地址（默认：127.0.0.1）
-- **port**: Web服务器端口（默认：8080）
+- **port**: Web服务器端口（默认：10245）
 - **debug**: 调试模式开关（默认：true）
 - **domain**: 自定义域名（用于生成访问链接）
 - **password**: Web管理界面访问密码（默认："limit"，留空表示无需密码）
@@ -535,7 +535,7 @@ A: 管理员可以发送 `/limit history <用户ID> <天数>` 命令查看指定
 
 #### 2. Web管理界面无法访问
 - 检查配置文件中的 `web_server.host` 和 `web_server.port` 配置是否正确
-- 确保防火墙已开放Web服务器端口（默认8080）
+- 确保防火墙已开放Web服务器端口（默认10245）
 - 检查AstrBot日志，查看是否有Web服务器启动失败的错误信息
 
 #### 3. 调用限制不生效
