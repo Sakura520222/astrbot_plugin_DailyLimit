@@ -330,7 +330,7 @@ class WebServer:
         _server_running (bool): 服务器运行状态标志
         _server_thread (Thread): 服务器运行线程
     """
-    def __init__(self, daily_limit_plugin, host='127.0.0.1', port=8080, domain=''):
+    def __init__(self, daily_limit_plugin, host='127.0.0.1', port=10245, domain=''):
         self.plugin = daily_limit_plugin
         self.host = host
         self.original_port = port  # 保存原始端口配置
