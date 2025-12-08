@@ -4524,7 +4524,7 @@ class DailyLimitPlugin(star.Star):
             check_url = self.config["version_check"].get("check_url", 
                                                          "https://box.firefly520.top/limit_update.txt")
             
-            self._log_info("开始检查版本更新: {}", check_url)
+            self._log_info("开始检查版本更新")
             
             # 发送HTTP请求获取版本信息
             async with aiohttp.ClientSession() as session:
