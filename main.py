@@ -123,8 +123,20 @@ class DailyLimitPlugin(star.Star):
             limits_dict: 目标限制字典
             limit_type: 限制类型描述
         """
-        config_text = self.config["limits"].get(config_key, "")
-        for line in config_text.strip().split('\n'):
+        config_value = self.config["limits"].get(config_key, "")
+        
+        # 处理配置值，兼容字符串和列表两种格式
+        if isinstance(config_value, str):
+            # 如果是字符串，按换行符分割并过滤空值
+            lines = [line.strip() for line in config_value.strip().split('\n') if line.strip()]
+        elif isinstance(config_value, list):
+            # 如果是列表，确保所有元素都是字符串并过滤空值
+            lines = [str(line).strip() for line in config_value if str(line).strip()]
+        else:
+            # 其他类型，转换为字符串处理
+            lines = [str(config_value).strip()]
+        
+        for line in lines:
             self._parse_limit_line(line, limits_dict, limit_type)
 
     def _parse_group_limits(self):
@@ -139,10 +151,20 @@ class DailyLimitPlugin(star.Star):
         """通用配置行解析器"""
         if not config_text:
             return
-        for line in config_text.strip().split('\n'):
-            line = line.strip()
-            if line:
-                parser_func(line)
+        
+        # 处理配置文本，兼容字符串和列表两种格式
+        if isinstance(config_text, str):
+            # 如果是字符串，按换行符分割并过滤空值
+            lines = [line.strip() for line in config_text.strip().split('\n') if line.strip()]
+        elif isinstance(config_text, list):
+            # 如果是列表，确保所有元素都是字符串并过滤空值
+            lines = [str(line).strip() for line in config_text if str(line).strip()]
+        else:
+            # 其他类型，转换为字符串处理
+            lines = [str(config_text).strip()]
+        
+        for line in lines:
+            parser_func(line)
 
     def _log(self, level: str, message: str, *args) -> None:
         """
@@ -399,8 +421,20 @@ class DailyLimitPlugin(star.Star):
 
     def _parse_time_period_limits(self):
         """解析时间段限制配置"""
-        time_period_text = self.config["limits"].get("time_period_limits", "")
-        for line in time_period_text.strip().split('\n'):
+        time_period_value = self.config["limits"].get("time_period_limits", "")
+        
+        # 处理配置值，兼容字符串和列表两种格式
+        if isinstance(time_period_value, str):
+            # 如果是字符串，按换行符分割并过滤空值
+            lines = [line.strip() for line in time_period_value.strip().split('\n') if line.strip()]
+        elif isinstance(time_period_value, list):
+            # 如果是列表，确保所有元素都是字符串并过滤空值
+            lines = [str(line).strip() for line in time_period_value if str(line).strip()]
+        else:
+            # 其他类型，转换为字符串处理
+            lines = [str(time_period_value).strip()]
+        
+        for line in lines:
             self._parse_time_period_line(line)
 
     def _parse_time_period_line(self, line):
@@ -536,8 +570,16 @@ class DailyLimitPlugin(star.Star):
     def _load_notification_config(self, security_config):
         """加载通知配置"""
         self.admin_notification_enabled = security_config.get("admin_notification_enabled", True)
-        admin_users_text = security_config.get("admin_users", "").strip()
-        self.admin_users = admin_users_text.split("\n") if admin_users_text else []
+        
+        # 处理admin_users配置，兼容字符串和列表两种格式
+        admin_users = security_config.get("admin_users", [])
+        if isinstance(admin_users, str):
+            # 如果是字符串，按换行符分割并过滤空值
+            self.admin_users = [user.strip() for user in admin_users.split("\n") if user.strip()]
+        else:
+            # 如果是列表或其他可迭代类型，直接使用并确保所有元素都是字符串
+            self.admin_users = [str(user).strip() for user in admin_users if str(user).strip()]
+            
         self.notification_cooldown = security_config.get("notification_cooldown", 300)  # 通知冷却时间（秒）
     
     def _init_notification_records(self):
