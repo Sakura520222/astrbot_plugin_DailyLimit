@@ -40,7 +40,7 @@ except ImportError:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.8.3",
+    version="v2.8.4",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -1906,33 +1906,13 @@ class DailyLimitPlugin(star.Star):
         
         return total_requests, active_users, active_groups, dates
 
-    def _calculate_growth_rate(self, total_requests):
-        """计算增长率
-        
-        参数：
-            total_requests: 总请求数列表
-            
-        返回：
-            float: 增长率百分比
-        """
-        if len(total_requests) > 1:
-            current_total = total_requests[-1]
-            previous_total = total_requests[-2]
-            if previous_total > 0:
-                return ((current_total - previous_total) / previous_total) * 100
-            else:
-                return 100 if current_total > 0 else 0
-        else:
-            return 0
-
-    def _generate_summary_section(self, total_requests, active_users, active_groups, growth_rate):
+    def _generate_summary_section(self, total_requests, active_users, active_groups):
         """生成趋势报告摘要部分
         
         参数：
             total_requests: 总请求数列表
             active_users: 活跃用户数列表
             active_groups: 活跃群组数列表
-            growth_rate: 增长率
             
         返回：
             str: 摘要部分文本
@@ -1941,7 +1921,6 @@ class DailyLimitPlugin(star.Star):
         summary += "═══════════════\n\n"
         
         summary += f"📊 总请求数趋势: {total_requests[-1]} 次\n"
-        summary += f"📈 增长率: {growth_rate:+.1f}%\n"
         summary += f"👤 活跃用户数: {active_users[-1]} 人\n"
         summary += f"👥 活跃群组数: {active_groups[-1]} 个\n\n"
         
@@ -1973,11 +1952,8 @@ class DailyLimitPlugin(star.Star):
             # 提取关键指标
             total_requests, active_users, active_groups, dates = self._extract_trend_metrics(trend_data)
             
-            # 计算增长率
-            growth_rate = self._calculate_growth_rate(total_requests)
-            
             # 生成报告各部分
-            summary = self._generate_summary_section(total_requests, active_users, active_groups, growth_rate)
+            summary = self._generate_summary_section(total_requests, active_users, active_groups)
             detailed = self._generate_detailed_section(trend_data, dates)
             
             # 组合完整报告
@@ -2534,7 +2510,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.8.3 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.8.4 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -2598,7 +2574,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.8.3 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.8.4 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -3095,13 +3071,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.8.3 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.8.4 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.8.3 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.8.4 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -4545,7 +4521,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.8.3")
+            current_version = self.config.get("version", "v2.8.4")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -4683,7 +4659,7 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.8.3")
+            current_version = self.config.get("version", "v2.8.4")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
@@ -4715,7 +4691,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.8.3")
+            current_version = self.config.get("version", "v2.8.4")
             
             # 构建版本信息消息
             version_msg = "📦 日调用限制插件版本信息\n"
@@ -4759,7 +4735,7 @@ class DailyLimitPlugin(star.Star):
 ░░░░░░░░░░   ░░░░░   ░░░░░ ░░░░░ ░░░░░░░░░░░    ░░░░░       ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░    ░░░░░    
                                                                                                                 
                                                                                                                                                                                                       
-                                       每日调用限制插件 v2.8.3                       
+                                       每日调用限制插件 v2.8.4                       
                                   作者: left666 & Sakura520222                  
     """
 

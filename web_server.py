@@ -8,7 +8,7 @@ Web管理界面服务器
 - 实时统计信息监控
 - 密码保护的安全访问
 
-版本: v2.8.3
+版本: v2.8.4
 作者: Sakura520222
 """
 import json
@@ -1367,8 +1367,7 @@ class WebServer:
                 'average': 0,
                 'peak': 0,
                 'min': 0,
-                'total': 0,
-                'growth_rate': 0
+                'total': 0
             }
         
         average = sum(data_list) / len(data_list)
@@ -1376,20 +1375,11 @@ class WebServer:
         min_val = min(data_list)
         total = sum(data_list)
         
-        # 计算增长率
-        growth_rate = 0
-        if len(data_list) >= 2:
-            first_val = data_list[0]
-            last_val = data_list[-1]
-            if first_val > 0:
-                growth_rate = ((last_val - first_val) / first_val) * 100
-        
         return {
             'average': round(average, 2),
             'peak': peak,
             'min': min_val,
-            'total': total,
-            'growth_rate': round(growth_rate, 2)
+            'total': total
         }
     
     def _calculate_trends_summary(self, trends_data):
