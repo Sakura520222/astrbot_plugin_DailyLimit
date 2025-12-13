@@ -40,7 +40,7 @@ except ImportError:
     name="daily_limit",
     desc="限制用户每日调用大模型的次数",
     author="left666 & Sakura520222",
-    version="v2.8.4",
+    version="v2.8.5",
     repo="https://github.com/left666/astrbot_plugin_daily_limit"
 )
 class DailyLimitPlugin(star.Star):
@@ -68,6 +68,7 @@ class DailyLimitPlugin(star.Star):
         self.abuse_records = {}  # 异常行为记录 {"user_id": {"timestamp": count}}
         self.blocked_users = {}  # 被限制的用户 {"user_id": "block_until_timestamp"}
         self.abuse_stats = {}  # 异常统计 {"user_id": {"total_abuse_count": count, "last_abuse_time": timestamp}}
+        self.zero_usage_notified_users = {}  # 零使用次数提醒记录 {"user_id": last_notified_timestamp}
 
         # 加载群组和用户特定限制
         self._load_limits_from_config()
@@ -1039,16 +1040,20 @@ class DailyLimitPlugin(star.Star):
     def _init_redis(self):
         """初始化Redis连接"""
         try:
+            # 获取连接池大小配置
+            pool_size = self.config["limits"].get("redis_connection_pool_size", 10)
+            
             self.redis = redis.Redis(
                 host=self.config["redis"]["host"],
                 port=self.config["redis"]["port"],
                 db=self.config["redis"]["db"],
                 password=self.config["redis"]["password"],
-                decode_responses=True  # 自动将响应解码为字符串
+                decode_responses=True,  # 自动将响应解码为字符串
+                max_connections=pool_size  # 使用配置的连接池大小
             )
             # 测试连接
             self.redis.ping()
-            self._log_info("Redis连接成功")
+            self._log_info("Redis连接成功，连接池大小: {}", pool_size)
         except Exception as e:
             self._log_error("Redis连接失败: {}", str(e))
             self.redis = None
@@ -2129,6 +2134,29 @@ class DailyLimitPlugin(star.Star):
         """处理超过限制的情况"""
         self._log_info("用户 {} 在群 {} 中已达到调用限制 {}", user_id, group_id, limit)
         
+        # 获取自定义消息配置
+        custom_messages = self.config["limits"].get("custom_messages", {})
+        
+        # 检查是否启用了零使用次数提醒冷却
+        cooldown_enabled = custom_messages.get("zero_usage_reminder_enabled", True)
+        
+        # 生成唯一标识符（用户ID + 群组ID）
+        user_key = f"{user_id}_{group_id}" if group_id else f"{user_id}_private"
+        
+        # 如果启用了冷却，检查是否在冷却时间内
+        if cooldown_enabled:
+            current_time = time.time()
+            cooldown_time = custom_messages.get("zero_usage_reminder_cooldown", 300)
+            
+            # 检查用户是否在冷却时间内
+            if user_key in self.zero_usage_notified_users:
+                last_notified_time = self.zero_usage_notified_users[user_key]
+                if current_time - last_notified_time < cooldown_time:
+                    # 在冷却时间内，不发送提醒
+                    self._log_info("用户 {} 在冷却时间内，跳过零使用次数提醒", user_key)
+                    event.stop_event()
+                    return
+        
         if group_id is not None:
             user_name = event.get_sender_name()
             # 使用群组ID作为群组名称，因为AstrMessageEvent没有get_group_name方法
@@ -2148,6 +2176,10 @@ class DailyLimitPlugin(star.Star):
                 usage, limit, user_name, None, None
             )
             await event.send(MessageChain().message(custom_message))
+        
+        # 记录提醒时间
+        if cooldown_enabled:
+            self.zero_usage_notified_users[user_key] = time.time()
             
         event.stop_event()
 
@@ -2343,6 +2375,14 @@ class DailyLimitPlugin(star.Star):
 
     def _get_usage_tip(self, remaining, limit):
         """根据剩余次数生成使用提示"""
+        # 优先使用配置项中的自定义提示文本
+        custom_tip = self.config["limits"].get("usage_tip", "每日限制次数会在重置时间自动恢复")
+        
+        # 如果配置了自定义提示，直接返回
+        if custom_tip:
+            return custom_tip
+        
+        # 否则使用智能提示逻辑
         if remaining <= 0:
             return "⚠️ 今日次数已用完，请明天再试"
         elif remaining <= limit * 0.2:  # 剩余20%以下
@@ -2397,13 +2437,29 @@ class DailyLimitPlugin(star.Star):
         """构建群组共享模式状态消息"""
         usage = self._get_group_usage(group_id)
         remaining = limit - usage
-        progress_bar = self._generate_progress_bar(usage, limit)
+        
+        # 检查是否显示进度条
+        show_progress = self.config["limits"].get("show_progress_bar", True)
+        progress_bar = self._generate_progress_bar(usage, limit) if show_progress else ""
+        
+        # 检查是否显示剩余次数
+        show_remaining = self.config["limits"].get("show_remaining_count", True)
+        remaining_text = f"\n🎯 剩余次数：{remaining} 次" if show_remaining else ""
+        
         usage_tip = self._get_usage_tip(remaining, limit)
         limit_type = "特定限制" if str(group_id) in self.group_limits else "默认限制"
         
+        # 构建消息模板
+        base_template = "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次"
+        if show_progress:
+            base_template += "\n📈 {progress_bar}"
+        if show_remaining:
+            base_template += "\n🎯 剩余次数：{remaining} 次"
+        base_template += "\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}"
+        
         return self._get_custom_message(
             "limit_status_group_shared_message",
-            "👥 群组共享模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
+            base_template,
             limit_type=limit_type,
             usage=usage,
             limit=limit,
@@ -2417,13 +2473,29 @@ class DailyLimitPlugin(star.Star):
         """构建群组独立模式状态消息"""
         usage = self._get_user_usage(user_id, group_id)
         remaining = limit - usage
-        progress_bar = self._generate_progress_bar(usage, limit)
+        
+        # 检查是否显示进度条
+        show_progress = self.config["limits"].get("show_progress_bar", True)
+        progress_bar = self._generate_progress_bar(usage, limit) if show_progress else ""
+        
+        # 检查是否显示剩余次数
+        show_remaining = self.config["limits"].get("show_remaining_count", True)
+        remaining_text = f"\n🎯 剩余次数：{remaining} 次" if show_remaining else ""
+        
         usage_tip = self._get_usage_tip(remaining, limit)
         limit_type = self._get_limit_type(user_id, group_id)
         
+        # 构建消息模板
+        base_template = "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次"
+        if show_progress:
+            base_template += "\n📈 {progress_bar}"
+        if show_remaining:
+            base_template += "\n🎯 剩余次数：{remaining} 次"
+        base_template += "\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}"
+        
         return self._get_custom_message(
             "limit_status_group_individual_message",
-            "👤 个人独立模式 - {limit_type}\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
+            base_template,
             limit_type=limit_type,
             usage=usage,
             limit=limit,
@@ -2437,12 +2509,28 @@ class DailyLimitPlugin(star.Star):
         """构建私聊状态消息"""
         usage = self._get_user_usage(user_id, group_id)
         remaining = limit - usage
-        progress_bar = self._generate_progress_bar(usage, limit)
+        
+        # 检查是否显示进度条
+        show_progress = self.config["limits"].get("show_progress_bar", True)
+        progress_bar = self._generate_progress_bar(usage, limit) if show_progress else ""
+        
+        # 检查是否显示剩余次数
+        show_remaining = self.config["limits"].get("show_remaining_count", True)
+        remaining_text = f"\n🎯 剩余次数：{remaining} 次" if show_remaining else ""
+        
         usage_tip = self._get_usage_tip(remaining, limit)
+        
+        # 构建消息模板
+        base_template = "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次"
+        if show_progress:
+            base_template += "\n📈 {progress_bar}"
+        if show_remaining:
+            base_template += "\n🎯 剩余次数：{remaining} 次"
+        base_template += "\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}"
         
         return self._get_custom_message(
             "limit_status_private_message",
-            "👤 个人使用状态\n📊 今日已使用：{usage}/{limit} 次\n📈 {progress_bar}\n🎯 剩余次数：{remaining} 次\n\n💡 使用提示：{usage_tip}\n🔄 每日重置时间：{reset_time}",
+            base_template,
             usage=usage,
             limit=limit,
             progress_bar=progress_bar,
@@ -2479,6 +2567,17 @@ class DailyLimitPlugin(star.Star):
         """用户查看当前使用状态"""
         user_id = event.get_sender_id()
         group_id = event.get_group_id() if event.get_message_type() == MessageType.GROUP_MESSAGE else None
+        
+        # 检查是否允许普通用户查询使用限制
+        allow_normal_check = self.config["limits"].get("allow_normal_users_check_limit", True)
+        
+        # 如果不允许普通用户查询，检查用户是否是管理员
+        # 注意：这里的管理员检查逻辑是简单示例，实际项目中可能需要更复杂的权限检查
+        if not allow_normal_check:
+            # 这里假设只有在admin_users列表中的用户才能查询
+            if str(user_id) not in self.admin_users:
+                event.set_result(MessageEventResult().message("您没有权限查询使用限制"))
+                return
 
         # 检查使用状态
         limit = self._get_user_limit(user_id, group_id)
@@ -2510,7 +2609,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_help_all(self, event: AstrMessageEvent):
         """显示本插件所有指令及其帮助信息"""
         help_msg = (
-            "🚀 日调用限制插件 v2.8.4 - 完整指令帮助\n"
+            "🚀 日调用限制插件 v2.8.5 - 完整指令帮助\n"
             "═════════════════════════\n\n"
             "👤 用户指令（所有人可用）：\n"
             "├── /limit_status - 查看您今日的使用状态和剩余次数\n"
@@ -2574,7 +2673,7 @@ class DailyLimitPlugin(star.Star):
             "• 管理员可使用 /limit help 查看详细管理命令\n"
             "• 时间段限制优先级最高，会覆盖其他限制规则\n"
             "• 默认忽略模式：#、*（可自定义添加）\n\n"
-            "📝 版本信息：v2.8.4 | 作者：left666 | 改进：Sakura520222\n"
+            "📝 版本信息：v2.8.5 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
@@ -3071,13 +3170,13 @@ class DailyLimitPlugin(star.Star):
     def _build_version_info_help(self) -> str:
         """构建版本信息帮助信息"""
         return (
-            "\n📝 版本信息：v2.8.4 | 作者：left666 | 改进：Sakura520222\n"
+            "\n📝 版本信息：v2.8.5 | 作者：left666 | 改进：Sakura520222\n"
             "═════════════════════════"
         )
 
     async def limit_help(self, event: AstrMessageEvent):
         """显示详细帮助信息（仅管理员）"""
-        help_msg = "🚀 日调用限制插件 v2.8.4 - 管理员详细帮助\n"
+        help_msg = "🚀 日调用限制插件 v2.8.5 - 管理员详细帮助\n"
         help_msg += "═════════════════════════\n\n"
         
         # 组合所有帮助信息
@@ -4521,7 +4620,7 @@ class DailyLimitPlugin(star.Star):
             self.last_checked_version_info = version_info  # 存储完整的版本信息
             
             # 比较版本号
-            current_version = self.config.get("version", "v2.8.4")
+            current_version = self.config.get("version", "v2.8.5")
             if self._compare_versions(version_info["version"], current_version) > 0:
                 # 检测到新版本
                 self._log_info("检测到新版本: {} -> {}", current_version, version_info["version"])
@@ -4659,7 +4758,7 @@ class DailyLimitPlugin(star.Star):
             await self._check_version_update()
             
             # 检查是否有新版本
-            current_version = self.config.get("version", "v2.8.4")
+            current_version = self.config.get("version", "v2.8.5")
             if self.last_checked_version:
                 if self._compare_versions(self.last_checked_version, current_version) > 0:
                     # 有新版本
@@ -4691,7 +4790,7 @@ class DailyLimitPlugin(star.Star):
     async def limit_version(self, event: AstrMessageEvent):
         """查看当前插件版本信息（仅管理员）"""
         try:
-            current_version = self.config.get("version", "v2.8.4")
+            current_version = self.config.get("version", "v2.8.5")
             
             # 构建版本信息消息
             version_msg = "📦 日调用限制插件版本信息\n"
@@ -4735,7 +4834,7 @@ class DailyLimitPlugin(star.Star):
 ░░░░░░░░░░   ░░░░░   ░░░░░ ░░░░░ ░░░░░░░░░░░    ░░░░░       ░░░░░░░░░░░ ░░░░░ ░░░░░     ░░░░░ ░░░░░    ░░░░░    
                                                                                                                 
                                                                                                                                                                                                       
-                                       每日调用限制插件 v2.8.4                       
+                                       每日调用限制插件 v2.8.5                       
                                   作者: left666 & Sakura520222                  
     """
 

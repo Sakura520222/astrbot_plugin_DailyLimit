@@ -94,11 +94,79 @@
                 "group": "基础设置",
                 "hint": "设置每日重置时间，格式为HH:MM（24小时制），例如：00:00（午夜）、06:00（早上6点）、12:00（中午12点）。支持通过/limit resettime命令动态管理"
             },
+            "show_remaining_count": {
+                "description": "是否显示剩余次数",
+                "type": "bool",
+                "default": true,
+                "group": "消息设置",
+                "hint": "在回复消息中显示用户剩余的使用次数"
+            },
+            "show_progress_bar": {
+                "description": "是否显示进度条",
+                "type": "bool",
+                "default": true,
+                "group": "消息设置",
+                "hint": "在使用状态查询中显示进度条"
+            },
+            "usage_tip": {
+                "description": "使用提示文本",
+                "type": "string",
+                "default": "每日限制次数会在重置时间自动恢复",
+                "group": "消息设置",
+                "hint": "在使用状态查询中显示的自定义提示文本"
+            },
+            "detailed_stats": {
+                "description": "是否记录详细统计数据",
+                "type": "bool",
+                "default": true,
+                "group": "统计设置",
+                "hint": "记录更详细的使用统计数据，包括小时级别的使用情况"
+            },
+            "stats_retention_days": {
+                "description": "统计数据保留天数",
+                "type": "int",
+                "default": 30,
+                "group": "统计设置",
+                "hint": "统计数据保留的天数，超过天数的数据将被自动清理"
+            },
+            "allow_normal_users_check_limit": {
+                "description": "允许普通用户查询使用限制",
+                "type": "bool",
+                "default": true,
+                "group": "管理设置",
+                "hint": "允许普通用户使用/limit_status命令查询自己的使用限制"
+            },
+            "redis_connection_pool_size": {
+                "description": "Redis连接池大小",
+                "type": "int",
+                "default": 10,
+                "group": "性能设置",
+                "hint": "Redis连接池的最大连接数，用于优化性能"
+            },
+            "cache_expire_time": {
+                "description": "缓存过期时间（秒）",
+                "type": "int",
+                "default": 3600,
+                "group": "性能设置",
+                "hint": "一些临时缓存数据的过期时间，单位为秒"
+            },
             "custom_messages": {
                 "description": "自定义提醒消息配置",
                 "type": "object",
                 "group": "消息设置",
                 "items": {
+                    "zero_usage_reminder_enabled": {
+                        "description": "是否启用0使用次数提醒冷却",
+                        "type": "bool",
+                        "default": true,
+                        "hint": "启用后，用户多次触发使用次数为0时不会重复发送提醒，直到冷却时间结束"
+                    },
+                    "zero_usage_reminder_cooldown": {
+                        "description": "0使用次数提醒冷却时间（秒）",
+                        "type": "int",
+                        "default": 300,
+                        "hint": "同一用户多次触发使用次数为0时，在此时间内不会重复发送提醒"
+                    },
                     "zero_usage_message": {
                         "description": "使用次数为0时的提醒消息",
                         "type": "text",
