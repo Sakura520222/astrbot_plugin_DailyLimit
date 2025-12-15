@@ -317,9 +317,14 @@
     </div>
 
     <script>
-        // 樱花飘落效果
+        // 樱花飘落效果优化
+        let sakuraCount = 0;
+        const maxSakura = 20; // 限制樱花数量，减少性能消耗
+        const sakuraContainer = document.getElementById('sakuraContainer');
+        
         function createSakura() {
-            const container = document.getElementById('sakuraContainer');
+            if (sakuraCount >= maxSakura) return;
+            
             const sakura = document.createElement('div');
             
             // 随机选择樱花样式 (1-4)
@@ -327,14 +332,16 @@
             sakura.className = `sakura style${styleNumber}`;
             
             // 随机位置
-            sakura.style.left = Math.random() * 100 + '%';
+            const left = Math.random() * 100;
+            sakura.style.left = left + 'vw';
             
-            // 随机动画时长 (10-30秒)
-            const duration = Math.random() * 20 + 10;
+            // 随机动画时长 (15-35秒，更流畅的飘落效果)
+            const duration = Math.random() * 20 + 15;
             sakura.style.animationDuration = duration + 's';
             
-            // 随机透明度 (0.3-0.9)
-            sakura.style.opacity = Math.random() * 0.6 + 0.3;
+            // 随机透明度 (0.2-0.8，更自然的视觉效果)
+            const opacity = Math.random() * 0.6 + 0.2;
+            sakura.style.opacity = opacity;
             
             // 随机摇摆效果
             const swayAnimations = ['sway1', 'sway2', 'sway3'];
@@ -342,33 +349,36 @@
             sakura.style.animationName = `fall, ${swayAnimation}`;
             sakura.style.animationDelay = `0s, ${Math.random() * 2}s`;
             
-            // 随机摇摆幅度
-            const swayIntensity = Math.random() * 20 + 10;
-            sakura.style.transform = `translateX(${swayIntensity}px)`;
+            // 随机初始旋转角度
+            const initialRotation = Math.random() * 360;
+            sakura.style.transform = `rotate(${initialRotation}deg)`;
             
-            container.appendChild(sakura);
+            // 添加到容器
+            sakuraContainer.appendChild(sakura);
+            sakuraCount++;
             
-            // 樱花落地后移除
-            setTimeout(() => {
+            // 动画结束后移除元素，防止内存泄漏
+            sakura.addEventListener('animationend', function() {
                 sakura.remove();
-            }, duration * 1000);
+                sakuraCount--;
+            });
         }
         
-        // 创建多个樱花
-        function createSakuras() {
-            // 初始创建30个樱花，分布在不同时间
-            for (let i = 0; i < 30; i++) {
+        // 初始创建樱花
+        function initSakuras() {
+            // 初始创建10个樱花，分布在不同时间，避免一次性创建过多
+            for (let i = 0; i < 10; i++) {
                 setTimeout(() => {
                     createSakura();
-                }, Math.random() * 3000);
+                }, Math.random() * 2000);
             }
         }
         
-        // 持续创建樱花，每300毫秒创建一个
-        setInterval(createSakura, 300);
+        // 持续创建樱花，每800毫秒创建一个，控制创建频率
+        setInterval(createSakura, 800);
         
-        // 初始创建樱花
-        createSakuras();
+        // 初始化樱花效果
+        initSakuras();
         
         // 自动聚焦密码输入框
         document.getElementById('password').focus();

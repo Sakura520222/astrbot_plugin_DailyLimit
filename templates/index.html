@@ -374,7 +374,7 @@
         
         @keyframes fall {
             to {
-                transform: translateY(100vh) rotate(360deg);
+                transform: translateY(calc(100vh + 100px)) rotate(360deg);
                 opacity: 0;
             }
         }
@@ -1365,7 +1365,7 @@
     </div>
     
     <!-- 樱花飘落效果容器 -->
-    <div id="sakuraContainer"></div>
+    <div id="sakuraContainer" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;"></div>
     
     <!-- 固定顶部导航栏 -->
     <nav class="top-nav">
@@ -1626,6 +1626,9 @@
             const loader = document.getElementById('pageLoader');
             loader.style.display = 'flex';
             
+            // 获取樱花容器
+            sakuraContainer = document.getElementById('sakuraContainer');
+            
             // 加载数据
             Promise.all([loadData(), loadTrends()]).then(() => {
                 // 数据加载完成后隐藏加载动画
@@ -1639,7 +1642,8 @@
             setInterval(loadData, 30000);
             
             // 创建樱花效果
-            setInterval(createSakura, 500);
+            setInterval(createSakura, 800);
+            initSakuras();
             
             // 添加搜索框事件监听
             document.getElementById('userFilter').addEventListener('input', filterUsers);
@@ -2309,7 +2313,6 @@
                     <p style="color: ${cardText};"><strong>峰值:</strong> ${summary.total_requests.peak}</p>
                     <p style="color: ${cardText};"><strong>最小值:</strong> ${summary.total_requests.min}</p>
                     <p style="color: ${cardText};"><strong>总计:</strong> ${summary.total_requests.total}</p>
-                    <p style="color: ${cardText};"><strong>增长率:</strong> ${summary.total_requests.growth_rate}%</p>
                 </div>
                 <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff6b8b;">
                     <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">👥 活跃用户</h4>
@@ -2317,7 +2320,6 @@
                     <p style="color: ${cardText};"><strong>峰值:</strong> ${summary.active_users.peak}</p>
                     <p style="color: ${cardText};"><strong>最小值:</strong> ${summary.active_users.min}</p>
                     <p style="color: ${cardText};"><strong>总计:</strong> ${summary.active_users.total}</p>
-                    <p style="color: ${cardText};"><strong>增长率:</strong> ${summary.active_users.growth_rate}%</p>
                 </div>
                 <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff85a1;">
                     <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">👥 活跃群组</h4>
@@ -2325,7 +2327,6 @@
                     <p style="color: ${cardText};"><strong>峰值:</strong> ${summary.active_groups.peak}</p>
                     <p style="color: ${cardText};"><strong>最小值:</strong> ${summary.active_groups.min}</p>
                     <p style="color: ${cardText};"><strong>总计:</strong> ${summary.active_groups.total}</p>
-                    <p style="color: ${cardText};"><strong>增长率:</strong> ${summary.active_groups.growth_rate}%</p>
                 </div>
                 <div style="background: ${cardBg}; padding: 15px; border-radius: 10px; border-left: 4px solid #ff4777;">
                     <h4 style="color: ${isDarkMode ? '#ff9eb5' : '#d63384'}; margin-bottom: 8px;">📅 统计周期</h4>
@@ -2438,11 +2439,11 @@
         // 樱花飘落效果优化
         let sakuraCount = 0;
         const maxSakura = 20; // 限制樱花数量，减少性能消耗
+        let sakuraContainer;
         
         function createSakura() {
             if (sakuraCount >= maxSakura) return;
             
-            const sakuraContainer = document.getElementById('sakuraContainer');
             const sakura = document.createElement('div');
             
             // 随机选择樱花样式 (1-4)
@@ -2453,12 +2454,12 @@
             const left = Math.random() * 100;
             sakura.style.left = left + 'vw';
             
-            // 随机动画时长 (10-30秒)
-            const duration = Math.random() * 20 + 10;
+            // 随机动画时长 (15-35秒，更流畅的飘落效果)
+            const duration = Math.random() * 20 + 15;
             sakura.style.animationDuration = duration + 's';
             
-            // 随机透明度 (0.3-0.9)
-            const opacity = Math.random() * 0.6 + 0.3;
+            // 随机透明度 (0.2-0.8，更自然的视觉效果)
+            const opacity = Math.random() * 0.6 + 0.2;
             sakura.style.opacity = opacity;
             
             // 随机摇摆效果
@@ -2467,19 +2468,29 @@
             sakura.style.animationName = `fall, ${swayAnimation}`;
             sakura.style.animationDelay = `0s, ${Math.random() * 2}s`;
             
-            // 随机摇摆幅度
-            const swayIntensity = Math.random() * 20 + 10;
-            sakura.style.transform = `translateX(${swayIntensity}px)`;
+            // 随机初始旋转角度，增加飘落的自然感
+            const initialRotation = Math.random() * 360;
+            sakura.style.transform = `rotate(${initialRotation}deg)`;
             
             // 添加到容器
             sakuraContainer.appendChild(sakura);
             sakuraCount++;
             
-            // 动画结束后移除元素
+            // 动画结束后移除元素，防止内存泄漏
             sakura.addEventListener('animationend', function() {
                 sakura.remove();
                 sakuraCount--;
             });
+        }
+        
+        // 初始创建樱花
+        function initSakuras() {
+            // 初始创建10个樱花，分布在不同时间，避免一次性创建过多
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    createSakura();
+                }, Math.random() * 2000);
+            }
         }
         
         // 手动刷新数据
