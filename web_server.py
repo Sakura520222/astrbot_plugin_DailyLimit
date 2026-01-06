@@ -8,7 +8,7 @@ Web管理界面服务器
 - 实时统计信息监控
 - 密码保护的安全访问
 
-版本: v2.8.5
+版本: v2.8.6
 作者: Sakura520222
 """
 import json
@@ -295,7 +295,7 @@ class TrendDataStorage:
             with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             
-            os.rename(temp_file, file_path)
+            os.replace(temp_file, file_path)
             return True
             
         except Exception as e:
