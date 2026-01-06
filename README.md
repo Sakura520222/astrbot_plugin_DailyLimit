@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/版本-v2.8.5-blue)
+![Version](https://img.shields.io/badge/版本-v2.8.6-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-3.5.1%2B-green)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 ![License](https://img.shields.io/badge/License-MIT-orange)
@@ -47,6 +47,14 @@
 AstrBot 日调用限制插件是专为AstrBot设计的AI资源管理工具，通过智能的每日调用限制机制，有效防止大模型API滥用，确保AI服务的稳定性和公平性。
 
 ## 版本更新
+
+### v2.8.6（2026.01.06）
+#### 指令冲突问题修复
+##### 修复时间段限制指令冲突
+- **修复指令注册方式** - 将时间段限制相关指令的注册方式从两个参数改为单个完整字符串，解决了指令冲突问题
+- **解决别名解析错误** - 修复了add等后缀被识别为"别名"，且每个字母被拆开单独视为一个别名的问题
+- **确保重启后保持正确** - 修复了手动改正后重启插件，指令名会重新加载成错误形式的问题
+
 [更新日志](./change_log.md)
 
 ---
