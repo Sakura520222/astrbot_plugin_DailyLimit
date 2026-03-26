@@ -2142,13 +2142,11 @@ class DailyLimitPlugin(star.Star):
     def _should_process_request(
         self, event: AstrMessageEvent, req: ProviderRequest
     ) -> bool:
-        """检查是否应该处理请求"""
+        """检查是否应该处理请求（不再调用 stop_event，由调用者决定）"""
         if not self._validate_redis_connection():
-            event.stop_event()
             return False
 
         if not req.prompt.strip() or self._should_skip_message(event.message_str):
-            event.stop_event()
             return False
 
         return True
@@ -2404,15 +2402,17 @@ class DailyLimitPlugin(star.Star):
         返回：
             bool: 是否允许继续处理请求
         """
-        # 基础检查
-        if not self._should_process_request(event, req):
-            return False
-
+        # 首先获取用户ID，用于豁免检查
         user_id = event.get_sender_id()
 
-        # 豁免用户检查
+        # 豁免用户检查 - 提前到最前面，确保豁免用户不受任何限制
         if self._is_exempt_user(user_id):
             return True
+
+        # 基础检查（_should_process_request 不再调用 stop_event）
+        if not self._should_process_request(event, req):
+            event.stop_event()
+            return False
 
         # 防刷机制检测（如果启用）
         if self.anti_abuse_enabled:
