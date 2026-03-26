@@ -41,6 +41,13 @@ except ImportError:
     WebServer = None
     # 实际的日志记录将在插件初始化后进行
 
+# 核心模块导入
+try:
+    from core import Logger, RedisClient
+except ImportError:
+    Logger = None
+    RedisClient = None
+
 
 @star.register(
     name="daily_limit",
@@ -75,6 +82,16 @@ class DailyLimitPlugin(star.Star):
         self.blocked_users = {}  # 被限制的用户 {"user_id": "block_until_timestamp"}
         self.abuse_stats = {}  # 异常统计 {"user_id": {"total_abuse_count": count, "last_abuse_time": timestamp}}
         self.zero_usage_notified_users = {}  # 零使用次数提醒记录 {"user_id": last_notified_timestamp}
+
+        # 初始化核心模块（必须最先初始化，因为其他代码依赖日志）
+        if Logger is None or RedisClient is None:
+            # 核心模块导入失败，使用内置实现
+            print("警告: 核心模块导入失败，使用内置实现")
+            self.logger = None
+            self.redis_client = None
+        else:
+            self.logger = Logger(self)
+            self.redis_client = RedisClient(self)
 
         # 加载群组和用户特定限制
         self._load_limits_from_config()
@@ -195,23 +212,36 @@ class DailyLimitPlugin(star.Star):
             message: 日志消息模板
             *args: 格式化参数
         """
-        log_func = getattr(logger, level, logger.info)
-        if args:
-            log_func(message.format(*args))
+        if self.logger:
+            self.logger.log(level, message, *args)
         else:
-            log_func(message)
+            # 使用内置实现（兼容旧代码）
+            log_func = getattr(logger, level, logger.info)
+            if args:
+                log_func(message.format(*args))
+            else:
+                log_func(message)
 
     def _log_warning(self, message, *args):
         """警告日志记录"""
-        self._log("warning", message, *args)
+        if self.logger:
+            self.logger.log_warning(message, *args)
+        else:
+            self._log("warning", message, *args)
 
     def _log_error(self, message, *args):
         """错误日志记录"""
-        self._log("error", message, *args)
+        if self.logger:
+            self.logger.log_error(message, *args)
+        else:
+            self._log("error", message, *args)
 
     def _log_info(self, message, *args):
         """信息日志记录"""
-        self._log("info", message, *args)
+        if self.logger:
+            self.logger.log_info(message, *args)
+        else:
+            self._log("info", message, *args)
 
     def _handle_error(
         self, error: Exception, context: str = "", user_message: str = None
@@ -229,15 +259,19 @@ class DailyLimitPlugin(star.Star):
             context: 错误上下文描述
             user_message: 返回给用户的友好错误消息（可选）
         """
-        error_context = f"{context}: " if context else ""
-        self._log_error("{}发生错误: {}", error_context, str(error))
+        if self.logger:
+            self.logger.handle_error(error, context, user_message)
+        else:
+            # 使用内置实现（兼容旧代码）
+            error_context = f"{context}: " if context else ""
+            self._log_error("{}发生错误: {}", error_context, str(error))
 
-        # 记录详细的错误信息用于调试
-        if hasattr(error, "__traceback__"):
-            import traceback
+            # 记录详细的错误信息用于调试
+            if hasattr(error, "__traceback__"):
+                import traceback
 
-            error_details = traceback.format_exc()
-            self._log_error("{}详细错误信息:\n{}", error_context, error_details)
+                error_details = traceback.format_exc()
+                self._log_error("{}详细错误信息:\n{}", error_context, error_details)
 
     def _safe_execute(
         self, func, *args, context: str = "", default_return=None, **kwargs
@@ -255,11 +289,15 @@ class DailyLimitPlugin(star.Star):
         Returns:
             函数执行结果或默认返回值
         """
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            self._handle_error(e, context)
-            return default_return
+        if self.logger:
+            return self.logger.safe_execute(func, *args, context=context, default_return=default_return, **kwargs)
+        else:
+            # 使用内置实现（兼容旧代码）
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                self._handle_error(e, context)
+                return default_return
 
     def _validate_redis_connection(self) -> bool:
         """
@@ -270,6 +308,10 @@ class DailyLimitPlugin(star.Star):
         返回：
             bool: Redis连接是否可用
         """
+        if self.redis_client:
+            return self.redis_client.validate_redis_connection()
+
+        # 使用内置实现（兼容旧代码）
         if not self.redis:
             self._log_error("Redis连接未初始化")
             return False
@@ -277,7 +319,7 @@ class DailyLimitPlugin(star.Star):
         try:
             # 发送ping命令验证连接
             response = self.redis.ping()
-            if response != True:
+            if not response:
                 self._log_warning("Redis ping响应异常: {}", response)
                 return False
 
@@ -300,6 +342,10 @@ class DailyLimitPlugin(star.Star):
         返回：
             dict: Redis连接状态信息字典
         """
+        if self.redis_client:
+            return self.redis_client.get_redis_status()
+
+        # 使用内置实现（兼容旧代码）
         if not self.redis:
             return {
                 "connected": False,
@@ -309,7 +355,7 @@ class DailyLimitPlugin(star.Star):
 
         try:
             # 检查连接状态
-            response = self.redis.ping()
+            self.redis.ping()
 
             # 获取Redis服务器信息
             info = self.redis.info()
@@ -335,6 +381,13 @@ class DailyLimitPlugin(star.Star):
         返回：
             bool: 重连成功返回True，失败返回False
         """
+        if self.redis_client:
+            result = self.redis_client.reconnect_redis()
+            # 更新 redis 属性
+            self.redis = self.redis_client.redis
+            return result
+
+        # 使用内置实现（兼容旧代码）
         if not self.redis:
             self._log_error("Redis连接未初始化，无法重连")
             return False
@@ -1124,24 +1177,30 @@ class DailyLimitPlugin(star.Star):
 
     def _init_redis(self):
         """初始化Redis连接"""
-        try:
-            # 获取连接池大小配置
-            pool_size = self.config["limits"].get("redis_connection_pool_size", 10)
+        if self.redis_client:
+            self.redis_client.init_redis()
+            # 设置 redis 属性以保持向后兼容
+            self.redis = self.redis_client.redis
+        else:
+            # 使用内置实现（兼容旧代码）
+            try:
+                # 获取连接池大小配置
+                pool_size = self.config["limits"].get("redis_connection_pool_size", 10)
 
-            self.redis = redis.Redis(
-                host=self.config["redis"]["host"],
-                port=self.config["redis"]["port"],
-                db=self.config["redis"]["db"],
-                password=self.config["redis"]["password"],
-                decode_responses=True,  # 自动将响应解码为字符串
-                max_connections=pool_size,  # 使用配置的连接池大小
-            )
-            # 测试连接
-            self.redis.ping()
-            self._log_info("Redis连接成功，连接池大小: {}", pool_size)
-        except Exception as e:
-            self._log_error("Redis连接失败: {}", str(e))
-            self.redis = None
+                self.redis = redis.Redis(
+                    host=self.config["redis"]["host"],
+                    port=self.config["redis"]["port"],
+                    db=self.config["redis"]["db"],
+                    password=self.config["redis"]["password"],
+                    decode_responses=True,  # 自动将响应解码为字符串
+                    max_connections=pool_size,  # 使用配置的连接池大小
+                )
+                # 测试连接
+                self.redis.ping()
+                self._log_info("Redis连接成功，连接池大小: {}", pool_size)
+            except Exception as e:
+                self._log_error("Redis连接失败: {}", str(e))
+                self.redis = None
 
     def _init_web_server(self):
         """
