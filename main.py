@@ -43,10 +43,12 @@ except ImportError:
 
 # 核心模块导入
 try:
-    from core import Logger, RedisClient
+    from core import Logger, RedisClient, ConfigManager, Limiter
 except ImportError:
     Logger = None
     RedisClient = None
+    ConfigManager = None
+    Limiter = None
 
 
 @star.register(
@@ -84,17 +86,31 @@ class DailyLimitPlugin(star.Star):
         self.zero_usage_notified_users = {}  # 零使用次数提醒记录 {"user_id": last_notified_timestamp}
 
         # 初始化核心模块（必须最先初始化，因为其他代码依赖日志）
-        if Logger is None or RedisClient is None:
+        if Logger is None or RedisClient is None or ConfigManager is None or Limiter is None:
             # 核心模块导入失败，使用内置实现
             print("警告: 核心模块导入失败，使用内置实现")
             self.logger = None
             self.redis_client = None
+            self.config_mgr = None
+            self.limiter = None
         else:
             self.logger = Logger(self)
             self.redis_client = RedisClient(self)
+            self.config_mgr = ConfigManager(self)
+            self.limiter = Limiter(self)
 
         # 加载群组和用户特定限制
-        self._load_limits_from_config()
+        if self.config_mgr:
+            self.config_mgr.load_limits_from_config()
+            # 将配置数据引用到实例变量，保持向后兼容
+            self.group_limits = self.config_mgr.group_limits
+            self.user_limits = self.config_mgr.user_limits
+            self.group_modes = self.config_mgr.group_modes
+            self.time_period_limits = self.config_mgr.time_period_limits
+            self.skip_patterns = self.config_mgr.skip_patterns
+        else:
+            # 使用内置实现（兼容旧代码）
+            self._load_limits_from_config()
 
         # 初始化Redis连接
         self._init_redis()
@@ -1577,6 +1593,10 @@ class DailyLimitPlugin(star.Star):
 
     def _should_skip_message(self, message_str):
         """检查消息是否应该忽略处理"""
+        if self.limiter:
+            return self.limiter.should_skip_message(message_str)
+
+        # 使用内置实现（兼容旧代码）
         if not message_str or not self.skip_patterns:
             return False
 
@@ -1589,6 +1609,10 @@ class DailyLimitPlugin(star.Star):
 
     def _get_group_mode(self, group_id):
         """获取群组的模式配置"""
+        if self.limiter:
+            return self.limiter.get_group_mode(group_id)
+
+        # 使用内置实现（兼容旧代码）
         if not group_id:
             return "individual"  # 私聊默认为独立模式
 
@@ -1601,6 +1625,10 @@ class DailyLimitPlugin(star.Star):
 
     def _parse_time_string(self, time_str):
         """解析时间字符串为时间对象"""
+        if self.limiter:
+            return self.limiter.parse_time_string(time_str)
+
+        # 使用内置实现（兼容旧代码）
         try:
             return datetime.datetime.strptime(time_str, "%H:%M").time()
         except ValueError:
@@ -1608,6 +1636,10 @@ class DailyLimitPlugin(star.Star):
 
     def _is_in_time_period(self, current_time_str, start_time_str, end_time_str):
         """检查当前时间是否在指定时间段内"""
+        if self.limiter:
+            return self.limiter.is_in_time_period(current_time_str, start_time_str, end_time_str)
+
+        # 使用内置实现（兼容旧代码）
         current_time = self._parse_time_string(current_time_str)
         start_time = self._parse_time_string(start_time_str)
         end_time = self._parse_time_string(end_time_str)
@@ -1625,6 +1657,10 @@ class DailyLimitPlugin(star.Star):
 
     def _get_current_time_period_limit(self):
         """获取当前时间段适用的限制"""
+        if self.limiter:
+            return self.limiter.get_current_time_period_limit()
+
+        # 使用内置实现（兼容旧代码）
         current_time_str = datetime.datetime.now().strftime("%H:%M")
 
         for time_limit in self.time_period_limits:
@@ -1637,6 +1673,10 @@ class DailyLimitPlugin(star.Star):
 
     def _get_time_period_usage_key(self, user_id, group_id=None, time_period_id=None):
         """获取时间段使用次数的Redis键"""
+        if self.limiter:
+            return self.limiter.get_time_period_usage_key(user_id, group_id, time_period_id)
+
+        # 使用内置实现（兼容旧代码）
         if time_period_id is None:
             # 如果没有指定时间段ID，使用当前时间段
             current_time_str = datetime.datetime.now().strftime("%H:%M")
@@ -1659,6 +1699,10 @@ class DailyLimitPlugin(star.Star):
 
     def _get_time_period_usage(self, user_id, group_id=None):
         """获取用户在时间段内的使用次数"""
+        if self.limiter:
+            return self.limiter.get_time_period_usage(user_id, group_id)
+
+        # 使用内置实现（兼容旧代码）
         if not self.redis:
             return 0
 
@@ -1671,6 +1715,10 @@ class DailyLimitPlugin(star.Star):
 
     def _increment_time_period_usage(self, user_id, group_id=None):
         """增加用户在时间段内的使用次数"""
+        if self.limiter:
+            return self.limiter.increment_time_period_usage(user_id, group_id)
+
+        # 使用内置实现（兼容旧代码）
         if not self.redis:
             return False
 
@@ -1691,6 +1739,10 @@ class DailyLimitPlugin(star.Star):
 
     def _get_user_limit(self, user_id, group_id=None):
         """获取用户的调用限制次数"""
+        if self.limiter:
+            return self.limiter.get_user_limit(user_id, group_id)
+
+        # 使用内置实现（兼容旧代码）
         user_id_str = str(user_id)
 
         # 检查用户是否豁免（优先级最高）

@@ -92,7 +92,7 @@ class RedisClient:
 
         try:
             # 检查连接状态
-            response = self.redis_client.ping()
+            self.redis_client.ping()
 
             # 获取Redis服务器信息
             info = self.redis_client.info()
