@@ -10,11 +10,11 @@
 ![Bug](https://img.shields.io/badge/已知Bug-无-green)
 ![Trends](https://img.shields.io/badge/趋势分析-已集成-green)
 
-![GitHub Stars](https://img.shields.io/github/stars/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Stars&color=yellow)
-![GitHub Forks](https://img.shields.io/github/forks/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Forks&color=blue)
-![GitHub Issues](https://img.shields.io/github/issues/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=github&label=Issues&color=green)
+![GitHub Stars](https://img.shields.io/github/stars/Sakura520222/astrbot_plugin_DailyLimit?style=for-the-badge&logo=github&label=Stars&color=yellow)
+![GitHub Forks](https://img.shields.io/github/forks/Sakura520222/astrbot_plugin_DailyLimit?style=for-the-badge&logo=github&label=Forks&color=blue)
+![GitHub Issues](https://img.shields.io/github/issues/Sakura520222/astrbot_plugin_DailyLimit?style=for-the-badge&logo=github&label=Issues&color=green)
 
-![GitHub Last Commit](https://img.shields.io/github/last-commit/left666/astrbot_plugin_daily_limit?style=for-the-badge&logo=git&label=最后提交)
+![GitHub Last Commit](https://img.shields.io/github/last-commit/Sakura520222/astrbot_plugin_DailyLimit?style=for-the-badge&logo=git&label=最后提交)
 ![GitHub Release](https://img.shields.io/github/v/release/Sakura520222/astrbot_plugin_DailyLimit?style=for-the-badge&logo=github&label=最新版本)
 
 ---
@@ -482,8 +482,15 @@ Redis是插件的数据存储后端，必须正确配置才能正常运行。
 ### 问题反馈
 如遇到任何问题，请通过以下方式联系：
 - Telegram: [@TamakiSakura520](https://t.me/TamakiSakura520)
-- Issues: [GitHub Issues](https://github.com/left666/astrbot_plugin_daily_limit/issues)
+- Issues: [GitHub Issues](https://github.com/Sakura520222/astrbot_plugin_DailyLimit/issues)
 - QQ群: 922321912 (可以反馈也可以来玩耍，不点Star不给进)
+
+> **📌 维护说明**
+>
+> 原作者 [left666](https://github.com/left666) 已不再维护此项目。
+> 目前由 [Sakura520222](https://github.com/Sakura520222) 接手维护，所有更新和发布均在 [Fork 仓库](https://github.com/Sakura520222/astrbot_plugin_DailyLimit) 进行。
+>
+> 如需提交 Issue 或 PR，请前往新仓库：**https://github.com/Sakura520222/astrbot_plugin_DailyLimit**
 
 ## 许可证
 
@@ -562,6 +569,6 @@ A: 管理员可以发送 `/limit history <用户ID> <天数>` 命令查看指定
 
 **您的每一个Star都是对我们最大的支持！**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=left666/astrbot_plugin_daily_limit&type=Date)](https://star-history.com/#left666/astrbot_plugin_daily_limit&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Sakura520222/astrbot_plugin_DailyLimit&type=Date)](https://star-history.com/#Sakura520222/astrbot_plugin_DailyLimit&Date)
 
 </div>
